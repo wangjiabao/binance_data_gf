@@ -1,0 +1,572 @@
+package logic
+
+import (
+	"binance_data_gf/internal/model/entity"
+	"binance_data_gf/internal/service"
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/gogf/gf/v2/container/gmap"
+	"github.com/gogf/gf/v2/container/gqueue"
+	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/os/grpool"
+	"io"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type (
+	sBinanceTraderHistory struct {
+		pool *grpool.Pool
+		// 针对binance拉取交易员下单接口定制的数据结构，每页数据即使同一个ip不同的交易员是可以返回数据，在逻辑上和这个设计方式要达成共识再设计后续的程序逻辑。
+		// 考虑实际的业务场景，接口最多6000条，每次查50条，最多需要120个槽位。假设，每10个槽位一循环，意味着对应同一个交易员每次并行使用10个ip查询10页数据。
+		ips []*proxyData
+	}
+)
+
+func init() {
+	service.RegisterBinanceTraderHistory(New())
+}
+
+func New() *sBinanceTraderHistory {
+	return &sBinanceTraderHistory{
+		grpool.New(), // 这里是请求协程池子，可以配合着可并行请求binance的限制使用，来限制最大共存数，后续jobs都将排队，考虑到上层的定时任务
+		make([]*proxyData, 0),
+	}
+}
+
+func IsEqual(f1, f2 float64) bool {
+	if f1 > f2 {
+		return f1-f2 < 0.000000001
+	} else {
+		return f2-f1 < 0.000000001
+	}
+}
+
+type proxyData struct {
+	Ip   string
+	Port int64
+}
+
+type proxyRep struct {
+	Data []*proxyData
+}
+
+// 拉取代理列表
+func requestProxy() ([]*proxyData, error) {
+	var (
+		resp   *http.Response
+		b      []byte
+		res    []*proxyData
+		err    error
+		apiUrl = ""
+	)
+
+	httpClient := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	// 构造请求
+	resp, err = httpClient.Get(apiUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	var l *proxyRep
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	res = make([]*proxyData, 0)
+	if nil == l.Data || 0 >= len(l.Data) {
+		return res, nil
+	}
+
+	for _, v := range l.Data {
+		res = append(res, v)
+	}
+
+	return res, nil
+}
+
+func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
+	s.ips, err = requestProxy()
+	if nil != err {
+		return err
+	}
+
+	return nil
+}
+
+func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint64) (err error) {
+	start := time.Now()
+	defer func() {
+		fmt.Printf("程序运行时长: %v\n", time.Since(start))
+	}()
+
+	//if 1 == traderNum {
+	//	fmt.Println("此时系统，workers：", pool.Size(), "jobs：", pool.Jobs())
+	//	return nil
+	//}
+
+	/**
+	 * 这里说明一下同步规则
+	 * 首先任务已经是每个交易员的单独协程了
+	 *
+	 * 步骤1：
+	 * 探测任务：拉取第1页10条，前10条与数据库中前10条对比，一摸一样认为无新订单（继续进行探测），否则有新订单进入步骤2。
+	 * 步骤2：
+	 * 下单任务：并行5个任务，每个任务表示每页数据的拉取，每次5页共250条，拉取后重新拉取第1页数据与刚才的5页中的第1页，
+	 * 对比10条，一模一样表示这段任务执行期间无更新，否则全部放弃，重新开始步骤2。
+	 *
+	 * ip池子的加入
+	 * 步骤1中探测任务可以考虑分配一个ip。
+	 * 步骤2中每个任务分配不同的ip（防止ip封禁用，目前经验是binance对每个ip在查询每个交易员数据时有2秒的限制，并行则需要不同的ip）
+	 *
+	 * 数据库不存在数据时，直接执行步骤2，并行5页，如果执行完任务，发现有新订单，则全部放弃，重新步骤2。
+	 */
+
+	// 数据库对比数据
+	var (
+		compareMax                     = 10 // 预设最大对比条数，小于最大限制10条
+		currentCompareMax              int  // 实际获得对比条数
+		binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory
+	)
+
+	err = g.Model("new_binance_trade_" + strconv.FormatUint(traderNum, 10) + "_history").Ctx(ctx).Limit(compareMax).OrderDesc("id").Scan(&binanceTradeHistoryNewestGroup)
+	if nil != err {
+		return err
+	}
+
+	currentCompareMax = len(binanceTradeHistoryNewestGroup)
+
+	// 数据库无数据，拉取满额6000条数据
+	if 0 >= currentCompareMax {
+		var (
+			PerPullPerPageCountLimitMax = 50        // 每次并行拉取每页最大条数
+			CountPage                   = 6000 / 50 // 理论总页数
+			ipsCount                    = len(s.ips)
+		)
+		fmt.Println(ipsCount)
+		if 0 >= ipsCount {
+			fmt.Println("ip池子不足，目前数量：", ipsCount)
+		}
+
+		// 协程共享数据
+		dataMap := gmap.New(true) // 结果map，key页数，并发安全
+		ipsQueue := gqueue.New()  // ip通道
+
+		// 定时器
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
+		wg := sync.WaitGroup{}
+		for i := 1; i <= CountPage; i++ {
+			tmpI := i // go1.22以前的循环陷阱
+
+			wg.Add(1)
+			err = s.pool.Add(ctx, func(ctx context.Context) {
+				defer wg.Done()
+
+				// 满足并行数，超过ip池子总数时，睡眠3秒后复用ip，度过ip频繁访问的禁用时长
+				if tmpI > ipsCount {
+					time.Sleep(time.Second * 3 * time.Duration(tmpI/ipsCount)) // 几倍
+				}
+
+				ipIndex := (tmpI - 1) % ipsCount // 循环复用
+
+				var (
+					tmpProxy            = "http://" + s.ips[ipIndex].Ip + ":" + strconv.FormatInt(s.ips[ipIndex].Port, 10) + "/"
+					retry               = true
+					binanceTradeHistory []*binanceTradeHistoryDataList
+				)
+				//binanceTradeHistory, err = s.requestBinanceTradeHistory(int64(tmpI), int64(PerPullPerPageCountLimitMax), traderNum)
+				//if nil != err {
+				//	fmt.Println(err)
+				//}
+
+				for {
+					// 执行
+					binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(tmpProxy, int64(tmpI), int64(PerPullPerPageCountLimitMax), traderNum)
+					if nil != err {
+						fmt.Println(err)
+					}
+
+					// 需要重试
+					if retry {
+						select {
+						case queueItem := <-ipsQueue.C: // 可用ip，阻塞
+							tmpProxy = queueItem.(string)
+							time.Sleep(time.Second * 3) // 这里一定刚用ip不久，间隔3秒
+						case <-ticker.C: // 定时器，阻塞超过一定时间，且没有可用ip，将全部ip重新推入
+							for kProxy, vProxy := range s.ips {
+								if 0 == kProxy {
+									tmpProxy = "http://" + vProxy.Ip + ":" + strconv.FormatInt(vProxy.Port, 10) + "/" // 给自己换一个
+								}
+
+								ipsQueue.Push("http://" + vProxy.Ip + ":" + strconv.FormatInt(vProxy.Port, 10) + "/")
+							}
+						case <-time.After(time.Minute * 10): // 即使1个ip轮流用，120次查询3秒一次，10分钟超时
+							fmt.Println("timeout, exit loop")
+							break
+						}
+
+						continue
+					} else {
+						fmt.Println("可用的proxy", tmpProxy)
+						// 直接获取到数据，ip可用性可以
+						ipsQueue.Push(tmpProxy)
+					}
+
+					break
+				}
+
+				// 设置数据
+				dataMap.Set(tmpI, binanceTradeHistory)
+			})
+
+			if nil != err {
+				fmt.Println("添加任务，拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
+			}
+		}
+
+		// 回收协程
+		wg.Wait()
+		// 清空可用ip的queue
+		ipsQueue.Close()
+
+		fmt.Println("总数：", dataMap.Size())
+
+		total := 0
+		for i := 1; i <= CountPage; i++ {
+			if dataMap.Contains(i) {
+				// 从dataMap中获取该页的数据
+				dataInterface := dataMap.Get(i)
+
+				// 类型断言，确保dataInterface是我们期望的类型
+				if data, ok := dataInterface.([]*binanceTradeHistoryDataList); ok {
+					// 现在data是一个binanceTradeHistoryDataList对象数组
+					for _, item := range data {
+						total++
+						// 处理每个item，例如打印出来
+						fmt.Println(item)
+					}
+				} else {
+					fmt.Println("类型断言失败，无法还原数据")
+				}
+			} else {
+				fmt.Printf("dataMap不包含页数: %d 的数据\n", i)
+			}
+		}
+		fmt.Println("total:", total)
+		dataMap.Clear()
+
+	} else {
+		//// 试探开始
+		//var (
+		//	compareResDiff bool
+		//)
+		//compareResDiff, err = s.compareBinanceTradeHistoryPageOne(int64(compareMax), traderNum, binanceTradeHistoryNewestGroup)
+		//if nil != err {
+		//	return err
+		//}
+		//
+		//// 相同，返回
+		//if !compareResDiff {
+		//	return nil
+		//}
+		//
+
+	}
+
+	// 获取交易员数据，第一次获取首页数据，试探是否更新
+	//s.handleGoroutine(ctx, 1, traderNum)
+
+	return nil
+}
+
+func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int64, traderNum uint64, binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory) (compareResDiff bool, err error) {
+	// 试探开始
+	var (
+		binanceTradeHistory []*binanceTradeHistoryDataList
+	)
+	binanceTradeHistory, err = s.requestBinanceTradeHistory(1, compareMax, traderNum)
+	if nil != err {
+		return false, err
+	}
+
+	// 对比
+	for _, vBinanceTradeHistory := range binanceTradeHistory {
+		// 页面上的数据一定大于等于数据库中对比条数
+		for _, binanceTradeHistoryNewest := range binanceTradeHistoryNewestGroup {
+			if !(vBinanceTradeHistory.Time == binanceTradeHistoryNewest.Time &&
+				vBinanceTradeHistory.Symbol == binanceTradeHistoryNewest.Symbol &&
+				vBinanceTradeHistory.Side == binanceTradeHistoryNewest.Side &&
+				vBinanceTradeHistory.PositionSide == binanceTradeHistoryNewest.PositionSide &&
+				IsEqual(vBinanceTradeHistory.Qty, binanceTradeHistoryNewest.Qty) && // 数量
+				IsEqual(vBinanceTradeHistory.Price, binanceTradeHistoryNewest.Price) && //价格
+				IsEqual(vBinanceTradeHistory.RealizedProfit, binanceTradeHistoryNewest.RealizedProfit) &&
+				IsEqual(vBinanceTradeHistory.Quantity, binanceTradeHistoryNewest.Quantity) &&
+				IsEqual(vBinanceTradeHistory.Fee, binanceTradeHistoryNewest.Fee)) {
+				compareResDiff = true
+			}
+		}
+	}
+
+	return compareResDiff, err
+}
+
+func (s *sBinanceTraderHistory) handleGoroutine(ctx context.Context, tmpPageNumber int64, traderNum uint64) (binanceTradeHistory []*binanceTradeHistoryDataList) {
+	var (
+		err error
+	)
+
+	binanceTradeHistory, err = s.requestBinanceTradeHistory(tmpPageNumber, 50, traderNum)
+	if nil != err {
+		time.Sleep(2 * time.Second)
+		fmt.Println(err)
+		return
+	}
+
+	if nil == binanceTradeHistory {
+		return binanceTradeHistory // 直接返回
+	}
+	if 0 >= len(binanceTradeHistory) {
+		return binanceTradeHistory // 直接返回
+	}
+
+	return binanceTradeHistory
+
+	//currentLen := len(binanceTradeHistory)
+	//for kPage, vBinanceTradeHistory := range binanceTradeHistory {
+	//	// 第1-n条一致认为是已有数据
+	//
+	//	if 0 == currentCompareMax { // 数据库无数据
+	//		// 不做限制
+	//	} else { // 有数据且不足对比条数
+	//
+	//		// 页面上的数据一定大于等于数据库中对比条数
+	//		for kDatabase, binanceTradeHistoryNewest := range binanceTradeHistoryNewestGroup {
+	//			if vBinanceTradeHistory.Time == binanceTradeHistoryNewest.Time &&
+	//				vBinanceTradeHistory.Symbol == binanceTradeHistoryNewest.Symbol &&
+	//				vBinanceTradeHistory.Side == binanceTradeHistoryNewest.Side &&
+	//				vBinanceTradeHistory.PositionSide == binanceTradeHistoryNewest.PositionSide &&
+	//				IsEqual(vBinanceTradeHistory.Qty, binanceTradeHistoryNewest.Qty) && // 数量
+	//				IsEqual(vBinanceTradeHistory.Price, binanceTradeHistoryNewest.Price) && //价格
+	//				IsEqual(vBinanceTradeHistory.RealizedProfit, binanceTradeHistoryNewest.RealizedProfit) &&
+	//				IsEqual(vBinanceTradeHistory.Quantity, binanceTradeHistoryNewest.Quantity) &&
+	//				IsEqual(vBinanceTradeHistory.Fee, binanceTradeHistoryNewest.Fee) {
+	//
+	//			}
+	//		}
+	//
+	//		time.Sleep(2 * time.Second)
+	//		last = false // 终止
+	//		break
+	//	}
+	//
+	//	// 类型处理
+	//	tmpActiveBuy := "false"
+	//	if vBinanceTradeHistory.ActiveBuy {
+	//		tmpActiveBuy = "true"
+	//	}
+	//
+	//	// 追加
+	//	insertBinanceTrade = append(insertBinanceTrade, &BinanceTradeHistory{
+	//		Time:                vBinanceTradeHistory.Time,
+	//		Symbol:              vBinanceTradeHistory.Symbol,
+	//		Side:                vBinanceTradeHistory.Side,
+	//		Price:               vBinanceTradeHistory.Price,
+	//		Fee:                 vBinanceTradeHistory.Fee,
+	//		FeeAsset:            vBinanceTradeHistory.FeeAsset,
+	//		Quantity:            vBinanceTradeHistory.Quantity,
+	//		QuantityAsset:       vBinanceTradeHistory.QuantityAsset,
+	//		RealizedProfit:      vBinanceTradeHistory.RealizedProfit,
+	//		RealizedProfitAsset: vBinanceTradeHistory.RealizedProfitAsset,
+	//		BaseAsset:           vBinanceTradeHistory.BaseAsset,
+	//		Qty:                 vBinanceTradeHistory.Qty,
+	//		PositionSide:        vBinanceTradeHistory.PositionSide,
+	//		ActiveBuy:           tmpActiveBuy,
+	//	})
+	//}
+	//
+	//// 不满50条，查到了最后，一般出现在大于50条的初始化
+	//if 50 > len(binanceTradeHistory) {
+	//	break
+	//}
+	//
+	//tmpPageNumber++
+	//time.Sleep(2 * time.Second)
+}
+
+type binanceTradeHistoryResp struct {
+	Data *binanceTradeHistoryData
+}
+
+type binanceTradeHistoryData struct {
+	Total uint64
+	List  []*binanceTradeHistoryDataList
+}
+
+type binanceTradeHistoryDataList struct {
+	Time                uint64
+	Symbol              string
+	Side                string
+	Price               float64
+	Fee                 float64
+	FeeAsset            string
+	Quantity            float64
+	QuantityAsset       string
+	RealizedProfit      float64
+	RealizedProfitAsset string
+	BaseAsset           string
+	Qty                 float64
+	PositionSide        string
+	ActiveBuy           bool
+}
+
+func (s *sBinanceTraderHistory) requestBinanceTradeHistory(pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, error) {
+	var (
+		resp   *http.Response
+		res    []*binanceTradeHistoryDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/trade-history"
+	)
+
+	// 构造请求
+	contentType := "application/json"
+	data := `{"pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
+	resp, err = http.Post(apiUrl, contentType, strings.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	//fmt.Println(string(b))
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	var l *binanceTradeHistoryResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	if nil == l.Data {
+		return res, nil
+	}
+
+	if nil == l.Data.List {
+		return res, nil
+	}
+
+	res = make([]*binanceTradeHistoryDataList, 0)
+	for _, v := range l.Data.List {
+		res = append(res, v)
+	}
+
+	return res, nil
+}
+
+func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string, pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, bool, error) {
+	var (
+		resp   *http.Response
+		res    []*binanceTradeHistoryDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/trade-history"
+	)
+
+	proxy, err := url.Parse(proxyAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	netTransport := &http.Transport{
+		Proxy:                 http.ProxyURL(proxy),
+		MaxIdleConnsPerHost:   10,
+		ResponseHeaderTimeout: time.Second * time.Duration(5),
+	}
+	httpClient := &http.Client{
+		Timeout:   time.Second * 10,
+		Transport: netTransport,
+	}
+
+	// 构造请求
+	contentType := "application/json"
+	data := `{"pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
+	resp, err = httpClient.Post(apiUrl, contentType, strings.NewReader(data))
+	if err != nil {
+		return nil, true, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return nil, true, err
+	}
+
+	var l *binanceTradeHistoryResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		fmt.Println(err)
+		return nil, true, err
+	}
+
+	if nil == l.Data {
+		fmt.Println(string(b))
+		return res, true, nil
+	}
+
+	if nil == l.Data.List {
+		return res, true, nil
+	}
+
+	res = make([]*binanceTradeHistoryDataList, 0)
+	for _, v := range l.Data.List {
+		res = append(res, v)
+	}
+
+	return res, false, nil
+}
