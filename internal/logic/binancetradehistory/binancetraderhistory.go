@@ -743,13 +743,13 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 	defer func(Body io.ReadCloser) {
 		err = Body.Close()
 		if err != nil {
-			fmt.Println(err)
+			//fmt.Println(err)
 		}
 	}(resp.Body)
 
 	b, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
 		return nil, true, err
 	}
 
