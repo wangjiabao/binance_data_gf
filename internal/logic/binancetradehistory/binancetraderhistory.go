@@ -261,34 +261,40 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	// 非初始化，截断数据
 	if !initPull {
 		tmpResData := make([]*entity.NewBinanceTradeHistory, 0)
-		stop := false
 		tmpCurrentCompareMax := currentCompareMax
+		fmt.Println("对比：", resData[0], binanceTradeHistoryNewestGroup[0])
 		for k, vResData := range resData {
 
 			if (len(resData) - k) <= tmpCurrentCompareMax { // 还剩下几条
 				tmpCurrentCompareMax = len(resData) - k
 			}
 
-			for i := 0; i < tmpCurrentCompareMax; i++ { // todo 如果只剩下最大条数以内的数字，只能兼容着比较，这里根据经验判断会不会出现吧
-				if resData[k+i].Time == binanceTradeHistoryNewestGroup[i].Time &&
-					resData[k+i].Symbol == binanceTradeHistoryNewestGroup[i].Symbol &&
-					resData[k+i].Side == binanceTradeHistoryNewestGroup[i].Side &&
-					resData[k+i].PositionSide == binanceTradeHistoryNewestGroup[i].PositionSide &&
-					IsEqual(resData[k+i].Qty, binanceTradeHistoryNewestGroup[i].Qty) && // 数量
-					IsEqual(resData[k+i].Price, binanceTradeHistoryNewestGroup[i].Price) && //价格
-					IsEqual(resData[k+i].RealizedProfit, binanceTradeHistoryNewestGroup[i].RealizedProfit) &&
-					IsEqual(resData[k+i].Quantity, binanceTradeHistoryNewestGroup[i].Quantity) &&
-					IsEqual(resData[k+i].Fee, binanceTradeHistoryNewestGroup[i].Fee) {
-				} else {
-					stop = true
+			tmp := 0
+			if 0 < tmpCurrentCompareMax {
+				for i := 0; i < tmpCurrentCompareMax; i++ { // todo 如果只剩下最大条数以内的数字，只能兼容着比较，这里根据经验判断会不会出现吧
+					if resData[k+i].Time == binanceTradeHistoryNewestGroup[i].Time &&
+						resData[k+i].Symbol == binanceTradeHistoryNewestGroup[i].Symbol &&
+						resData[k+i].Side == binanceTradeHistoryNewestGroup[i].Side &&
+						resData[k+i].PositionSide == binanceTradeHistoryNewestGroup[i].PositionSide &&
+						IsEqual(resData[k+i].Qty, binanceTradeHistoryNewestGroup[i].Qty) && // 数量
+						IsEqual(resData[k+i].Price, binanceTradeHistoryNewestGroup[i].Price) && //价格
+						IsEqual(resData[k+i].RealizedProfit, binanceTradeHistoryNewestGroup[i].RealizedProfit) &&
+						IsEqual(resData[k+i].Quantity, binanceTradeHistoryNewestGroup[i].Quantity) &&
+						IsEqual(resData[k+i].Fee, binanceTradeHistoryNewestGroup[i].Fee) {
+					} else {
+						tmp++
+					}
+				}
+
+				if tmpCurrentCompareMax == tmp {
 					break
 				}
-			}
-
-			if stop {
+			} else {
 				break
 			}
+
 			tmpResData = append(tmpResData, vResData)
+			fmt.Println("新增：", vResData)
 		}
 
 		resData = tmpResData
