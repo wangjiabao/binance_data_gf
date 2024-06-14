@@ -14,7 +14,6 @@ import (
 	"github.com/gogf/gf/v2/os/grpool"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -397,7 +396,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 				if 0 < len(tmpProxy) {
 					binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(tmpProxy, int64(tmpI), int64(PerPullPerPageCountLimitMax), traderNum)
 					if nil != err {
-						fmt.Println(err)
+						//fmt.Println(err)
 					}
 				}
 
@@ -502,7 +501,7 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 		s.ips.Iterator(func(k int, v string) bool {
 			binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
 			if nil != err {
-				fmt.Println(err)
+				//fmt.Println(err)
 				return true
 			}
 
@@ -514,10 +513,11 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 		})
 
 	} else {
-		binanceTradeHistory, err = s.requestBinanceTradeHistory(1, compareMax, traderNum)
-		if nil != err {
-			return false, err
-		}
+		fmt.Println("ip无可用")
+		//binanceTradeHistory, err = s.requestBinanceTradeHistory(1, compareMax, traderNum)
+		//if nil != err {
+		//	return false, err
+		//}
 	}
 
 	// 对比
@@ -719,7 +719,8 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 
 	proxy, err := url.Parse(proxyAddr)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		return nil, true, err
 	}
 	netTransport := &http.Transport{
 		Proxy:                 http.ProxyURL(proxy),
