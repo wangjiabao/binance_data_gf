@@ -144,9 +144,6 @@ func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
 
 func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint64) (err error) {
 	start := time.Now()
-	defer func() {
-		fmt.Printf("程序运行时长: %v\n", time.Since(start))
-	}()
 
 	//if 1 == traderNum {
 	//	fmt.Println("此时系统，workers：", pool.Size(), "jobs：", pool.Jobs())
@@ -292,7 +289,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			}
 
 			tmpResData = append(tmpResData, vResData)
-			fmt.Println("新增：", vResData)
 		}
 
 		resData = tmpResData
@@ -323,6 +319,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		return nil
 	}
 
+	fmt.Printf("程序运行时长: %v\n", time.Since(start))
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
 		_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", insertData)
 		if err != nil {
