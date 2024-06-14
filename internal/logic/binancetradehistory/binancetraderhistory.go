@@ -280,8 +280,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 						IsEqual(resData[k+i].RealizedProfit, binanceTradeHistoryNewestGroup[i].RealizedProfit) &&
 						IsEqual(resData[k+i].Quantity, binanceTradeHistoryNewestGroup[i].Quantity) &&
 						IsEqual(resData[k+i].Fee, binanceTradeHistoryNewestGroup[i].Fee) {
-					} else {
-						fmt.Println(k, resData[k+i], binanceTradeHistoryNewestGroup[i], 1111)
 						tmp++
 					}
 				}
