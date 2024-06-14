@@ -262,22 +262,15 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	if !initPull {
 		tmpResData := make([]*entity.NewBinanceTradeHistory, 0)
 		tmpCurrentCompareMax := currentCompareMax
-		fmt.Println("对比：", resData[0], binanceTradeHistoryNewestGroup[0])
 		for k, vResData := range resData {
 
 			if (len(resData) - k) <= tmpCurrentCompareMax { // 还剩下几条
 				tmpCurrentCompareMax = len(resData) - k
 			}
 
-			if k == 2 {
-				fmt.Println(vResData)
-			}
 			tmp := 0
 			if 0 < tmpCurrentCompareMax {
 				for i := 0; i < tmpCurrentCompareMax; i++ { // todo 如果只剩下最大条数以内的数字，只能兼容着比较，这里根据经验判断会不会出现吧
-					if k == 2 {
-						fmt.Println(resData[k+i], binanceTradeHistoryNewestGroup[i])
-					}
 					if resData[k+i].Time == binanceTradeHistoryNewestGroup[i].Time &&
 						resData[k+i].Symbol == binanceTradeHistoryNewestGroup[i].Symbol &&
 						resData[k+i].Side == binanceTradeHistoryNewestGroup[i].Side &&
@@ -288,7 +281,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 						IsEqual(resData[k+i].Quantity, binanceTradeHistoryNewestGroup[i].Quantity) &&
 						IsEqual(resData[k+i].Fee, binanceTradeHistoryNewestGroup[i].Fee) {
 					} else {
-						fmt.Println(1111)
+						fmt.Println(k, resData[k+i], binanceTradeHistoryNewestGroup[i], 1111)
 						tmp++
 					}
 				}
