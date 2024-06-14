@@ -435,7 +435,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 	// 结果数据
 	resData = make([]*entity.NewBinanceTradeHistory, 0)
-	for i := 0; i < CountPage; i++ {
+	for i := 1; i <= CountPage; i++ {
 		if dataMap.Contains(i) {
 			// 从dataMap中获取该页的数据
 			dataInterface := dataMap.Get(i)
@@ -746,17 +746,16 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 	var l *binanceTradeHistoryResp
 	err = json.Unmarshal(b, &l)
 	if err != nil {
-		fmt.Println(err)
 		return nil, true, err
 	}
 
 	if nil == l.Data {
-		fmt.Println(string(b))
 		return res, true, nil
 	}
 
+	res = make([]*binanceTradeHistoryDataList, 0)
 	if nil == l.Data.List {
-		return res, true, nil
+		return res, false, nil
 	}
 
 	res = make([]*binanceTradeHistoryDataList, 0)
