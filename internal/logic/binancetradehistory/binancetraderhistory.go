@@ -321,9 +321,18 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 	fmt.Printf("程序运行时长: %v\n", time.Since(start))
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
-		_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", insertData)
-		if err != nil {
-			return err
+		batchSize := 1000
+		for i := 0; i < len(insertData); i += batchSize {
+			end := i + batchSize
+			if end > len(insertData) {
+				end = len(insertData)
+			}
+			batch := insertData[i:end]
+
+			_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", batch)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
