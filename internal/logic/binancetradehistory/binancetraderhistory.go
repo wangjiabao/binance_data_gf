@@ -67,7 +67,7 @@ func requestProxy() ([]*proxyData, error) {
 		b      []byte
 		res    []*proxyData
 		err    error
-		apiUrl = ""
+		apiUrl = "http://api.ipipgo.com/ip?cty=00&c=150&pt=1&ft=json&pat=\\n&rep=1&key=a37f63e3&ts=30"
 	)
 
 	httpClient := &http.Client{
@@ -114,20 +114,27 @@ func requestProxy() ([]*proxyData, error) {
 }
 
 func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
-	var (
-		res []*proxyData
-	)
+	res := make([]*proxyData, 0)
 	for i := 0; i < 1000; i++ {
-		res, err = requestProxy()
+		var (
+			resTmp []*proxyData
+		)
+		resTmp, err = requestProxy()
 		if nil != err {
 			fmt.Println("ip池子更新出错", err)
+			time.Sleep(time.Second * 1)
 			continue
 		}
 
-		if 0 < len(res) {
+		if 0 < len(resTmp) {
+			res = append(res, resTmp...)
+		}
+
+		if 20 <= len(res) { // 20个最小
 			break
 		}
 
+		fmt.Println("ip池子更新时无数据")
 		time.Sleep(time.Second * 1)
 	}
 
@@ -138,6 +145,7 @@ func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
 		s.ips.Set(k, "http://"+v.Ip+":"+strconv.FormatInt(v.Port, 10)+"/")
 	}
 
+	fmt.Println("ip池子更新成功", time.Now(), s.ips.Size())
 	return nil
 }
 
@@ -351,6 +359,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 	if 0 >= ipsCount {
 		fmt.Println("ip池子不足，目前数量：", ipsCount)
+		return nil, err
 	}
 
 	// 定义协程共享数据
@@ -491,39 +500,43 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int64, traderNum uint64, binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory) (compareResDiff bool, err error) {
 	// 试探开始
 	var (
+		tryLimit            = 3
 		binanceTradeHistory []*binanceTradeHistoryDataList
 	)
-	if 0 < s.ips.Size() { // 代理是否不为空
-		var (
-			retry = true
-		)
+	for i := 1; i <= tryLimit; i++ {
+		if 0 < s.ips.Size() { // 代理是否不为空
+			var (
+				retry = true
+			)
 
-		s.ips.Iterator(func(k int, v string) bool {
-			binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
-			if nil != err {
-				//fmt.Println(err)
-				return true
-			}
+			s.ips.Iterator(func(k int, v string) bool {
+				binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
+				if nil != err {
+					//fmt.Println(err)
+					return true
+				}
 
-			if retry {
-				return true
-			}
+				if retry {
+					return true
+				}
 
-			return false
-		})
+				return false
+			})
 
-	} else {
-		fmt.Println("ip无可用")
-		//binanceTradeHistory, err = s.requestBinanceTradeHistory(1, compareMax, traderNum)
-		//if nil != err {
-		//	return false, err
-		//}
+		} else {
+			fmt.Println("ip无可用")
+			//binanceTradeHistory, err = s.requestBinanceTradeHistory(1, compareMax, traderNum)
+			//if nil != err {
+			//	return false, err
+			//}
+			time.Sleep(time.Second * 1)
+		}
 	}
 
 	// 对比
 	if len(binanceTradeHistory) != len(binanceTradeHistoryNewestGroup) {
 		fmt.Println("无法对比，条数不同", len(binanceTradeHistory), len(binanceTradeHistoryNewestGroup))
-		return true, nil
+		return false, nil
 	}
 	for k, vBinanceTradeHistory := range binanceTradeHistory {
 		if vBinanceTradeHistory.Time == binanceTradeHistoryNewestGroup[k].Time &&
@@ -737,6 +750,7 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 	data := `{"pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
 	resp, err = httpClient.Post(apiUrl, contentType, strings.NewReader(data))
 	if err != nil {
+		fmt.Println(333, err)
 		return nil, true, err
 	}
 
@@ -744,13 +758,13 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 	defer func(Body io.ReadCloser) {
 		err = Body.Close()
 		if err != nil {
-			//fmt.Println(err)
+			fmt.Println(222, err)
 		}
 	}(resp.Body)
 
 	b, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		//fmt.Println(err)
+		fmt.Println(111, err)
 		return nil, true, err
 	}
 

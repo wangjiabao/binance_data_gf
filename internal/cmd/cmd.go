@@ -110,7 +110,7 @@ func addIpUpdateTask(ctx context.Context) {
 	}
 
 	// 小于ip最大活性时长
-	gtimer.AddSingleton(ctx, time.Minute*28, handle)
+	gtimer.AddSingleton(ctx, time.Minute*20, handle)
 }
 
 func addTraderTask(ctx context.Context, traderID uint64) {
