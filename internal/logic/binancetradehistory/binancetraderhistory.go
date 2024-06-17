@@ -506,6 +506,7 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 	for i := 1; i <= tryLimit; i++ {
 		if 0 < s.ips.Size() { // 代理是否不为空
 			var (
+				ok    = false
 				retry = true
 			)
 
@@ -520,9 +521,13 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 					return true
 				}
 
+				ok = true
 				return false
 			})
 
+			if ok {
+				break
+			}
 		} else {
 			fmt.Println("ip无可用")
 			//binanceTradeHistory, err = s.requestBinanceTradeHistory(1, compareMax, traderNum)
