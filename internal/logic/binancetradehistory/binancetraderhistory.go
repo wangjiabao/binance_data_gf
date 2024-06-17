@@ -67,7 +67,7 @@ func requestProxy() ([]*proxyData, error) {
 		b      []byte
 		res    []*proxyData
 		err    error
-		apiUrl = "http://api.ipipgo.com/ip?cty=00&c=150&pt=1&ft=json&pat=\\n&rep=1&key=a37f63e3&ts=30"
+		apiUrl = ""
 	)
 
 	httpClient := &http.Client{
