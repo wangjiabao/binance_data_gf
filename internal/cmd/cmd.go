@@ -22,7 +22,7 @@ var (
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
 			// ip池子维护
 			initIpUpdateTask(ctx)
-			addIpUpdateTask(ctx)
+			//addIpUpdateTask(ctx)
 
 			updateTradersPeriodically(ctx)
 			return nil
@@ -122,7 +122,7 @@ func addTraderTask(ctx context.Context, traderID uint64) {
 			fmt.Println("任务运行时出错:", "交易员信息:", relTraderId, "错误信息:", err)
 		}
 	}
-	traderSingleton[traderID] = gtimer.AddSingleton(ctx, time.Second*3, handle)
+	traderSingleton[traderID] = gtimer.AddSingleton(ctx, time.Second*2, handle)
 	fmt.Println("添加成功交易员:", traderID)
 }
 
