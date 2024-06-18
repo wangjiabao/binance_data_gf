@@ -115,6 +115,26 @@ func requestProxy() ([]*proxyData, error) {
 
 func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
 	// 20个客户端代理
+	s.ips.Set(0, "http://43.133.175.121:888/")
+	s.ips.Set(1, "http://43.133.209.89:888/")
+	s.ips.Set(2, "http://43.133.177.73:888/")
+	s.ips.Set(3, "http://43.163.224.155:888/")
+	s.ips.Set(4, "http://43.163.210.110:888/")
+	s.ips.Set(5, "http://43.163.242.180:888/")
+	s.ips.Set(6, "http://43.153.162.213:888/")
+	s.ips.Set(7, "http://43.163.197.191:888/")
+	s.ips.Set(8, "http://43.163.217.70:888/")
+	s.ips.Set(9, "http://43.163.194.135:888/")
+	s.ips.Set(10, "http://43.130.254.24:888/")
+	s.ips.Set(11, "http://43.128.249.92:888/")
+	s.ips.Set(12, "http://43.153.177.107:888/")
+	s.ips.Set(13, "http://43.133.15.135:888/")
+	s.ips.Set(14, "http://43.130.229.66:888/")
+	s.ips.Set(15, "http://43.133.196.220:888/")
+	s.ips.Set(16, "http://43.163.208.36:888/")
+	s.ips.Set(17, "http://43.133.204.254:888/")
+	s.ips.Set(18, "http://43.153.181.89:888/")
+	s.ips.Set(19, "http://43.163.231.217:888/")
 
 	return nil
 
@@ -157,7 +177,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	start := time.Now()
 
 	// 测试部分注释
-	_, err = s.pullAndSetHandle(ctx, traderNum, 20) // 执行
+	_, err = s.pullAndSetHandle(ctx, traderNum, 120) // 执行
 	fmt.Println("ok", traderNum)
 	return nil
 
