@@ -176,10 +176,10 @@ func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
 func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint64) (err error) {
 	start := time.Now()
 
-	// 测试部分注释
-	_, err = s.pullAndSetHandle(ctx, traderNum, 120) // 执行
-	fmt.Println("ok", traderNum)
-	return nil
+	//// 测试部分注释
+	//_, err = s.pullAndSetHandle(ctx, traderNum, 120) // 执行
+	//fmt.Println("ok", traderNum)
+	//return nil
 
 	// 测试部分注释
 	//if 1 == traderNum {
@@ -501,11 +501,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			// 类型断言，确保dataInterface是我们期望的类型
 			if data, ok := dataInterface.([]*binanceTradeHistoryDataList); ok {
 				// 现在data是一个binanceTradeHistoryDataList对象数组
-				for k, item := range data {
-					if k == 0 {
-						fmt.Println(item)
-					}
-
+				for _, item := range data {
 					// 类型处理
 					tmpActiveBuy := "false"
 					if item.ActiveBuy {
