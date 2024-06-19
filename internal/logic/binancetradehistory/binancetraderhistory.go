@@ -658,6 +658,9 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 		tryLimit            = 3
 		binanceTradeHistory []*binanceTradeHistoryDataList
 	)
+
+	ipMapNeedWait = make(map[string]bool, 0)
+	newData = make([]*binanceTradeHistoryDataList, 0)
 	for i := 1; i <= tryLimit; i++ {
 		if 0 < s.ips.Size() { // 代理是否不为空
 			var (
