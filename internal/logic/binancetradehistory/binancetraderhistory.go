@@ -315,10 +315,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
-		if 3949214983441029120 == traderNum {
-			fmt.Printf("程序拉取部分，开始 %v, 第一次拉取完成，时长: %v\n", start, time.Since(start))
-		}
-
 		// 重新拉取，比较探测的结果，和最后的锁定结果
 		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 1, false, ipMapNeedWait) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
@@ -328,10 +324,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		if nil == resDataCompare {
 			fmt.Println("日常，执行拉取数据协程异常，比较数据，数据缺失", "交易员：", traderNum)
 			return nil
-		}
-
-		if 3949214983441029120 == traderNum {
-			fmt.Printf("程序拉取部分，开始 %v, 第二次拉取完成，时长: %v\n", start, time.Since(start))
 		}
 
 		for kNewData, vNewData := range newData {
@@ -670,10 +662,6 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 
 			// todo 因为是map，遍历时的第一次，可能一直会用某一条代理信息
 			s.ips.Iterator(func(k int, v string) bool {
-				if 3949214983441029120 == traderNum {
-					fmt.Println("比较使用的ip：", v)
-				}
-
 				ipMapNeedWait[v] = true
 				binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
 				if nil != err {
@@ -685,9 +673,6 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 				}
 
 				ok = true
-				if 3949214983441029120 == traderNum {
-					fmt.Println(time.Now())
-				}
 				return false
 			})
 
