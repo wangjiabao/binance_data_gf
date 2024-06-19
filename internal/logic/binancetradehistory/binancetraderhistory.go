@@ -527,7 +527,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			for retryTimes < retryTimesLimit { // 最大重试
 				var tmpProxy string
 				if 0 < ipsQueue.Len() { // 有剩余先用剩余比较快，不用等2s
-					if v := ipsQueue.Pop(); v != nil {
+					if v := ipsQueue.Pop(); nil != v {
 						tmpProxy = v.(string)
 						if 3999914496956055297 == traderNum {
 							fmt.Println("直接开始", tmpProxy)
@@ -664,7 +664,9 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 				}
 				binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
 				if nil != err {
-					//fmt.Println(err)
+					if 3999914496956055297 == traderNum {
+						fmt.Println(err)
+					}
 					return true
 				}
 
