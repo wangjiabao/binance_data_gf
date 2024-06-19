@@ -517,7 +517,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			defer wg.Done()
 
 			var (
-				retry               bool
+				retry               = false
 				retryTimes          = 0
 				retryTimesLimit     = 5 // 重试次数
 				successPull         bool
@@ -548,6 +548,12 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 				// 拿到了代理，执行
 				if 0 < len(tmpProxy) {
+					if !retry {
+						if 3999914496956055297 == traderNum {
+							fmt.Println("直接开始", tmpProxy)
+						}
+					}
+
 					binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(tmpProxy, int64(tmpI), int64(PerPullPerPageCountLimitMax), traderNum)
 					if nil != err {
 						//fmt.Println(err)
