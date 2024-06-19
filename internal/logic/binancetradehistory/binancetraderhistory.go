@@ -240,7 +240,12 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		}
 
 	} else if compareMax <= currentCompareMax {
-		// 试探开始
+		/**
+		 * 试探开始
+		 * todo
+		 * 假设：binance的数据同一时间的数据乱序出现时，因为和数据库前n条不一致，而认为是新数据，后续保存会有处理，但是这里就会一直生效，现在这个假设还未出现。*
+		 * 因为保存对上述假设的限制，延迟出现的同一时刻的数据一直不会被系统保存，而每次都会触发这里的比较，得到不同数据，为了防止乱序的假设最后是这样做，但是可能导致一直拉取10页流量增长，后续观察假设不存在最好，假设存在更新方案。
+		 */
 		var (
 			compareResDiff bool
 		)
@@ -302,38 +307,61 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		return nil
 	}
 
+	// 时长
+	fmt.Printf("程序拉取部分，开始 %v, 时长: %v\n", start, time.Since(start))
+
 	// 非初始化，截断数据
 	if !initPull {
 		tmpResData := make([]*entity.NewBinanceTradeHistory, 0)
-		tmpCurrentCompareMax := currentCompareMax
-		for k, vResData := range resData {
-
-			if (len(resData) - k) <= tmpCurrentCompareMax { // 还剩下几条
-				tmpCurrentCompareMax = len(resData) - k
-			}
-
-			tmp := 0
-			if 0 < tmpCurrentCompareMax {
-				for i := 0; i < tmpCurrentCompareMax; i++ { // todo 如果只剩下最大条数以内的数字，只能兼容着比较，这里根据经验判断会不会出现吧
-					if resData[k+i].Time == binanceTradeHistoryNewestGroup[i].Time &&
-						resData[k+i].Symbol == binanceTradeHistoryNewestGroup[i].Symbol &&
-						resData[k+i].Side == binanceTradeHistoryNewestGroup[i].Side &&
-						resData[k+i].PositionSide == binanceTradeHistoryNewestGroup[i].PositionSide &&
-						IsEqual(resData[k+i].Qty, binanceTradeHistoryNewestGroup[i].Qty) && // 数量
-						IsEqual(resData[k+i].Price, binanceTradeHistoryNewestGroup[i].Price) && //价格
-						IsEqual(resData[k+i].RealizedProfit, binanceTradeHistoryNewestGroup[i].RealizedProfit) &&
-						IsEqual(resData[k+i].Quantity, binanceTradeHistoryNewestGroup[i].Quantity) &&
-						IsEqual(resData[k+i].Fee, binanceTradeHistoryNewestGroup[i].Fee) {
-						tmp++
-					}
-				}
-
-				if tmpCurrentCompareMax == tmp {
-					break
-				}
-			} else {
+		//tmpCurrentCompareMax := currentCompareMax
+		for _, vResData := range resData {
+			/**
+			 * todo
+			 * 停下的条件，暂时是：
+			 * 1 数据库的最新一条比较，遇到时间，币种，方向一致的订单，认为是已经纳入数据库的。
+			 * 2 如果数据库最新的时间已经晚于遍历时遇到的时间也一定停下，这里会有一个好处，即使binance的数据同一时间的数据总是乱序出现时，我们也不会因为和数据库第一条不一致，而认为是新数据。
+			 *
+			 * 如果存在误判的原因，
+			 * 1 情况是在上次执行完拉取保存后，相同时间的数据，因为binance的问题，延迟出现了。
+			 */
+			if vResData.Time == binanceTradeHistoryNewestGroup[0].Time &&
+				vResData.Side == binanceTradeHistoryNewestGroup[0].Side &&
+				vResData.PositionSide == binanceTradeHistoryNewestGroup[0].PositionSide &&
+				vResData.Symbol == binanceTradeHistoryNewestGroup[0].Symbol {
 				break
 			}
+
+			if vResData.Time <= binanceTradeHistoryNewestGroup[0].Time {
+				fmt.Println("遍历时竟然未发现相同数据！此时数据时间已经小于了数据库最新一条的时间，如果时间相同可能是binance延迟出现的数据，数据：", vResData, binanceTradeHistoryNewestGroup[0])
+				break
+			}
+
+			//if (len(resData) - k) <= tmpCurrentCompareMax { // 还剩下几条
+			//	tmpCurrentCompareMax = len(resData) - k
+			//}
+
+			//tmp := 0
+			//if 0 < tmpCurrentCompareMax {
+			//	for i := 0; i < tmpCurrentCompareMax; i++ { // todo 如果只剩下最大条数以内的数字，只能兼容着比较，这里根据经验判断会不会出现吧
+			//		if resData[k+i].Time == binanceTradeHistoryNewestGroup[i].Time &&
+			//			resData[k+i].Symbol == binanceTradeHistoryNewestGroup[i].Symbol &&
+			//			resData[k+i].Side == binanceTradeHistoryNewestGroup[i].Side &&
+			//			resData[k+i].PositionSide == binanceTradeHistoryNewestGroup[i].PositionSide &&
+			//			IsEqual(resData[k+i].Qty, binanceTradeHistoryNewestGroup[i].Qty) && // 数量
+			//			IsEqual(resData[k+i].Price, binanceTradeHistoryNewestGroup[i].Price) && //价格
+			//			IsEqual(resData[k+i].RealizedProfit, binanceTradeHistoryNewestGroup[i].RealizedProfit) &&
+			//			IsEqual(resData[k+i].Quantity, binanceTradeHistoryNewestGroup[i].Quantity) &&
+			//			IsEqual(resData[k+i].Fee, binanceTradeHistoryNewestGroup[i].Fee) {
+			//			tmp++
+			//		}
+			//	}
+			//
+			//	if tmpCurrentCompareMax == tmp {
+			//		break
+			//	}
+			//} else {
+			//	break
+			//}
 
 			tmpResData = append(tmpResData, vResData)
 		}
@@ -365,9 +393,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	if 0 >= len(insertData) {
 		return nil
 	}
-
-	// 总计时长
-	fmt.Printf("程序运行时长: %v\n", time.Since(start))
 
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
 		batchSize := 500
