@@ -315,7 +315,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
-		if 3999914496956055297 == traderNum {
+		if 3949214983441029120 == traderNum {
 			fmt.Printf("程序拉取部分，开始 %v, 第一次拉取完成，时长: %v\n", start, time.Since(start))
 		}
 
@@ -330,7 +330,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
-		if 3999914496956055297 == traderNum {
+		if 3949214983441029120 == traderNum {
 			fmt.Printf("程序拉取部分，开始 %v, 第二次拉取完成，时长: %v\n", start, time.Since(start))
 		}
 
@@ -489,7 +489,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			if _, ok := ipMapNeedWait[s.ips.Get(i)]; ok {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueueNeedWait.Push(s.ips.Get(i))
-					if 3999914496956055297 == traderNum {
+					if 3949214983441029120 == traderNum {
 						fmt.Println("暂时别用的ip", s.ips.Get(i))
 					}
 				}
@@ -504,7 +504,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			if _, ok := ipMapNeedWait[s.ips.Get(i)]; ok {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueueNeedWait.Push(s.ips.Get(i))
-					if 3999914496956055297 == traderNum {
+					if 3949214983441029120 == traderNum {
 						fmt.Println("暂时别用的ip", s.ips.Get(i))
 					}
 				}
@@ -537,7 +537,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 				if 0 < ipsQueue.Len() { // 有剩余先用剩余比较快，不用等2s
 					if v := ipsQueue.Pop(); nil != v {
 						tmpProxy = v.(string)
-						if 3999914496956055297 == traderNum {
+						if 3949214983441029120 == traderNum {
 							fmt.Println("直接开始", tmpProxy)
 						}
 					}
@@ -548,7 +548,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 					select {
 					case queueItem2 := <-ipsQueueNeedWait.C: // 可用ip，阻塞
 						tmpProxy = queueItem2.(string)
-						if 3999914496956055297 == traderNum {
+						if 3949214983441029120 == traderNum {
 							fmt.Println("等待", tmpProxy)
 						}
 						time.Sleep(time.Second * 2)
@@ -571,7 +571,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 				// 需要重试
 				if retry {
-					if 3999914496956055297 == traderNum {
+					if 3949214983441029120 == traderNum {
 						fmt.Println("异常需要重试", tmpProxy)
 					}
 
@@ -670,7 +670,7 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 
 			// todo 因为是map，遍历时的第一次，可能一直会用某一条代理信息
 			s.ips.Iterator(func(k int, v string) bool {
-				if 3999914496956055297 == traderNum {
+				if 3949214983441029120 == traderNum {
 					fmt.Println("比较使用的ip：", v)
 				}
 
@@ -685,7 +685,7 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 				}
 
 				ok = true
-				if 3999914496956055297 == traderNum {
+				if 3949214983441029120 == traderNum {
 					fmt.Println(time.Now())
 				}
 				return false
