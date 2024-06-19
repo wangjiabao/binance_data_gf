@@ -307,6 +307,10 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
+		if 3999914496956055297 == traderNum {
+			fmt.Printf("程序拉取部分，开始 %v, 第一次拉取完成，时长: %v\n", start, time.Since(start))
+		}
+
 		// 重新拉取，比较两次结果集合
 		// 不同，开始捕获
 		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 10, false, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
@@ -322,6 +326,10 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		if len(resData) != len(resDataCompare) {
 			fmt.Println("日常，执行拉取数据协程异常，比较数据，条数不同", "交易员：", traderNum, len(resData), len(resDataCompare))
 			return nil
+		}
+
+		if 3999914496956055297 == traderNum {
+			fmt.Printf("程序拉取部分，开始 %v, 第二次拉取完成，时长: %v\n", start, time.Since(start))
 		}
 
 		// 比较
@@ -491,10 +499,16 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			if i < initPushIpQueue { // 初始化多少个
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueue.Push(s.ips.Get(i))
+					if 3999914496956055297 == traderNum {
+						fmt.Println("正向", s.ips.Get(i))
+					}
 				}
 			} else {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueueNeedWait.Push(s.ips.Get(i)) // 剩余的扔到等待queue
+					if 3999914496956055297 == traderNum {
+						fmt.Println("正向, wait", s.ips.Get(i))
+					}
 				}
 			}
 		}
@@ -504,9 +518,15 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueue.Push(s.ips.Get(i))
 				}
+				if 3999914496956055297 == traderNum {
+					fmt.Println("反向", s.ips.Get(i))
+				}
 			} else {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueueNeedWait.Push(s.ips.Get(i)) // 剩余的扔到等待queue
+				}
+				if 3999914496956055297 == traderNum {
+					fmt.Println("反向, wait", s.ips.Get(i))
 				}
 			}
 		}
@@ -556,6 +576,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 				// 需要重试
 				if retry {
+					if 3999914496956055297 == traderNum {
+						fmt.Println("重试", tmpProxy)
+					}
 					retryTimes++
 					continue
 				}
