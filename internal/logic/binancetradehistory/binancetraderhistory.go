@@ -530,6 +530,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 					select {
 					case queueItem := <-ipsQueue.C: // 可用ip，阻塞
 						tmpProxy = queueItem.(string)
+						if 3999914496956055297 == traderNum {
+							fmt.Println("直接开始", tmpProxy)
+						}
 					default:
 					}
 				}
@@ -539,6 +542,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 					select {
 					case queueItem2 := <-ipsQueueNeedWait.C: // 可用ip，阻塞
 						tmpProxy = queueItem2.(string)
+						if 3999914496956055297 == traderNum {
+							fmt.Println("等待", tmpProxy)
+						}
 						time.Sleep(time.Second * 2)
 					case <-time.After(time.Minute * 8): // 即使1个ip轮流用，120次查询2秒一次，8分钟超时足够
 						fmt.Println("timeout, exit loop")
@@ -548,12 +554,6 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 				// 拿到了代理，执行
 				if 0 < len(tmpProxy) {
-					if !retry {
-						if 3999914496956055297 == traderNum {
-							fmt.Println("直接开始", tmpProxy)
-						}
-					}
-
 					binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(tmpProxy, int64(tmpI), int64(PerPullPerPageCountLimitMax), traderNum)
 					if nil != err {
 						//fmt.Println(err)
@@ -566,7 +566,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 				// 需要重试
 				if retry {
 					if 3999914496956055297 == traderNum {
-						fmt.Println("重试", tmpProxy)
+						fmt.Println("异常需要重试", tmpProxy)
 					}
 
 					retryTimes++
@@ -661,6 +661,9 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 
 			// todo 因为是map，遍历时的第一次，可能一直会用某一条代理信息
 			s.ips.Iterator(func(k int, v string) bool {
+				if 3999914496956055297 == traderNum {
+					fmt.Println("比较使用的ip：", v)
+				}
 				binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
 				if nil != err {
 					//fmt.Println(err)
