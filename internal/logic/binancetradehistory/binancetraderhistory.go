@@ -206,7 +206,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 	// 数据库对比数据
 	var (
-		compareMax                     = 10 // 预设最大对比条数，小于最大限制10条
+		compareMax                     = 10 // 预设最大对比条数，小于最大限制10条，注意：不能超过50条，在程序多出有写死，binance目前每页最大条数
 		currentCompareMax              int  // 实际获得对比条数
 		binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory
 		resData                        []*entity.NewBinanceTradeHistory
@@ -222,10 +222,11 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	currentCompareMax = len(binanceTradeHistoryNewestGroup)
 
 	insertData := make([]*do.NewBinanceTradeHistory, 0)
+	ipMapNeedWait := make(map[string]bool, 0) // 刚使用的ip，大概率加快查询速度，2s以内别用的ip
 	// 数据库无数据，拉取满额6000条数据
 	if 0 >= currentCompareMax {
 		initPull = true
-		resData, err = s.pullAndSetHandle(ctx, traderNum, 120, true) // 执行
+		resData, err = s.pullAndSetHandle(ctx, traderNum, 120, true, ipMapNeedWait) // 执行
 		if nil != err {
 			fmt.Println("初始化，执行拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
 		}
@@ -260,7 +261,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 		// todo 如果未来初始化仓位不准，那这里应该很多的嫌疑，因为在拉取中第一页数据的协程最后执行完，那么即使带单员更新了，也不会被察觉，当然概率很小
 		// 有问题的话，可以换成重新执行一次完整的拉取，比较
-		compareResDiff, err = s.compareBinanceTradeHistoryPageOne(int64(compareMax), traderNum, afterCompare)
+		_, _, compareResDiff, err = s.compareBinanceTradeHistoryPageOne(int64(compareMax), traderNum, afterCompare)
 		if nil != err {
 			return err
 		}
@@ -279,9 +280,11 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		 * 因为保存对上述假设的限制，延迟出现的同一时刻的数据一直不会被系统保存，而每次都会触发这里的比较，得到不同数据，为了防止乱序的假设最后是这样做，但是可能导致一直拉取10页流量增长，后续观察假设不存在最好，假设存在更新方案。
 		 */
 		var (
+			newData        []*binanceTradeHistoryDataList
 			compareResDiff bool
 		)
-		compareResDiff, err = s.compareBinanceTradeHistoryPageOne(int64(compareMax), traderNum, binanceTradeHistoryNewestGroup)
+
+		ipMapNeedWait, newData, compareResDiff, err = s.compareBinanceTradeHistoryPageOne(int64(compareMax), traderNum, binanceTradeHistoryNewestGroup)
 		if nil != err {
 			return err
 		}
@@ -291,8 +294,13 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
+		if nil == newData || 0 >= len(newData) {
+			fmt.Println("日常，执行拉取数据协程异常，新数据未空，错误信息：", err, "交易员：", traderNum)
+			return nil
+		}
+
 		// 不同，开始捕获
-		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, true) // todo 执行，目前猜测最大500条，根据经验拍脑袋
+		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, true, ipMapNeedWait) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
 			fmt.Println("日常，执行拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
 		}
@@ -311,9 +319,8 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			fmt.Printf("程序拉取部分，开始 %v, 第一次拉取完成，时长: %v\n", start, time.Since(start))
 		}
 
-		// 重新拉取，比较两次结果集合
-		// 不同，开始捕获
-		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 10, false) // todo 执行，目前猜测最大500条，根据经验拍脑袋
+		// 重新拉取，比较探测的结果，和最后的锁定结果
+		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 1, false, ipMapNeedWait) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
 			fmt.Println("日常，执行拉取数据协程异常，比较数据，错误信息：", err, "交易员：", traderNum)
 		}
@@ -323,41 +330,24 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
-		if len(resData) != len(resDataCompare) {
-			fmt.Println("日常，执行拉取数据协程异常，比较数据，条数不同", "交易员：", traderNum, len(resData), len(resDataCompare))
-			return nil
-		}
-
 		if 3999914496956055297 == traderNum {
 			fmt.Printf("程序拉取部分，开始 %v, 第二次拉取完成，时长: %v\n", start, time.Since(start))
 		}
 
-		// 比较
-		if !(resData[0].Time == resDataCompare[0].Time &&
-			resData[0].Symbol == resDataCompare[0].Symbol &&
-			resData[0].Side == resDataCompare[0].Side &&
-			resData[0].PositionSide == resDataCompare[0].PositionSide &&
-			IsEqual(resData[0].Qty, resDataCompare[0].Qty) && // 数量
-			IsEqual(resData[0].Price, resDataCompare[0].Price) && //价格
-			IsEqual(resData[0].RealizedProfit, resDataCompare[0].RealizedProfit) &&
-			IsEqual(resData[0].Quantity, resDataCompare[0].Quantity) &&
-			IsEqual(resData[0].Fee, resDataCompare[0].Fee)) {
-			fmt.Println("日常，执行拉取数据协程异常，比较数据，数据不同，第一条", "交易员：", traderNum, resData[0], resDataCompare[0])
-			return nil
-		}
-
-		lastKey := len(resData) - 1
-		if !(resData[lastKey].Time == resDataCompare[lastKey].Time &&
-			resData[lastKey].Symbol == resDataCompare[lastKey].Symbol &&
-			resData[lastKey].Side == resDataCompare[lastKey].Side &&
-			resData[lastKey].PositionSide == resDataCompare[lastKey].PositionSide &&
-			IsEqual(resData[lastKey].Qty, resDataCompare[lastKey].Qty) && // 数量
-			IsEqual(resData[lastKey].Price, resDataCompare[lastKey].Price) && //价格
-			IsEqual(resData[lastKey].RealizedProfit, resDataCompare[lastKey].RealizedProfit) &&
-			IsEqual(resData[lastKey].Quantity, resDataCompare[lastKey].Quantity) &&
-			IsEqual(resData[lastKey].Fee, resDataCompare[lastKey].Fee)) {
-			fmt.Println("日常，执行拉取数据协程异常，比较数据，数据不同，末尾条", "交易员：", traderNum, resData[lastKey], resDataCompare[lastKey])
-			return nil
+		for kNewData, vNewData := range newData {
+			// 比较
+			if !(vNewData.Time == resDataCompare[kNewData].Time &&
+				vNewData.Symbol == resDataCompare[kNewData].Symbol &&
+				vNewData.Side == resDataCompare[kNewData].Side &&
+				vNewData.PositionSide == resDataCompare[kNewData].PositionSide &&
+				IsEqual(vNewData.Qty, resDataCompare[kNewData].Qty) && // 数量
+				IsEqual(vNewData.Price, resDataCompare[kNewData].Price) && //价格
+				IsEqual(vNewData.RealizedProfit, resDataCompare[kNewData].RealizedProfit) &&
+				IsEqual(vNewData.Quantity, resDataCompare[kNewData].Quantity) &&
+				IsEqual(vNewData.Fee, resDataCompare[kNewData].Fee)) {
+				fmt.Println("日常，执行拉取数据协程异常，比较数据，数据不同，第一条", "交易员：", traderNum, resData[0], resDataCompare[0])
+				return nil
+			}
 		}
 
 	} else {
@@ -475,7 +465,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	return nil
 }
 
-func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool) (resData []*entity.NewBinanceTradeHistory, err error) {
+func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool, ipMapNeedWait map[string]bool) (resData []*entity.NewBinanceTradeHistory, err error) {
 	var (
 		PerPullPerPageCountLimitMax = 50 // 每次并行拉取每页最大条数
 	)
@@ -496,14 +486,32 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 	// 这里注意一定是key是从0开始到size-1的
 	if ipOrderAsc {
 		for i := 0; i < s.ips.Size(); i++ {
-			if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
-				ipsQueue.Push(s.ips.Get(i))
+			if _, ok := ipMapNeedWait[s.ips.Get(i)]; ok {
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueueNeedWait.Push(s.ips.Get(i))
+					if 3999914496956055297 == traderNum {
+						fmt.Println("暂时别用的ip", s.ips.Get(i))
+					}
+				}
+			} else {
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueue.Push(s.ips.Get(i))
+				}
 			}
 		}
 	} else {
 		for i := s.ips.Size() - 1; i >= 0; i-- {
-			if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
-				ipsQueue.Push(s.ips.Get(i))
+			if _, ok := ipMapNeedWait[s.ips.Get(i)]; ok {
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueueNeedWait.Push(s.ips.Get(i))
+					if 3999914496956055297 == traderNum {
+						fmt.Println("暂时别用的ip", s.ips.Get(i))
+					}
+				}
+			} else {
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueue.Push(s.ips.Get(i))
+				}
 			}
 		}
 	}
@@ -644,7 +652,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 	return resData, nil
 }
 
-func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int64, traderNum uint64, binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory) (compareResDiff bool, err error) {
+func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int64, traderNum uint64, binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory) (ipMapNeedWait map[string]bool, newData []*binanceTradeHistoryDataList, compareResDiff bool, err error) {
 	// 试探开始
 	var (
 		tryLimit            = 3
@@ -662,11 +670,10 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 				if 3999914496956055297 == traderNum {
 					fmt.Println("比较使用的ip：", v)
 				}
+
+				ipMapNeedWait[v] = true
 				binanceTradeHistory, retry, err = s.requestProxyBinanceTradeHistory(v, 1, compareMax, traderNum)
 				if nil != err {
-					if 3999914496956055297 == traderNum {
-						fmt.Println(err)
-					}
 					return true
 				}
 
@@ -675,6 +682,9 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 				}
 
 				ok = true
+				if 3999914496956055297 == traderNum {
+					fmt.Println(time.Now())
+				}
 				return false
 			})
 
@@ -687,16 +697,17 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 			//if nil != err {
 			//	return false, err
 			//}
-			return false, nil
+			return ipMapNeedWait, newData, false, nil
 		}
 	}
 
 	// 对比
 	if len(binanceTradeHistory) != len(binanceTradeHistoryNewestGroup) {
 		fmt.Println("无法对比，条数不同", len(binanceTradeHistory), len(binanceTradeHistoryNewestGroup))
-		return false, nil
+		return ipMapNeedWait, newData, false, nil
 	}
 	for k, vBinanceTradeHistory := range binanceTradeHistory {
+		newData = append(newData, vBinanceTradeHistory)
 		if vBinanceTradeHistory.Time == binanceTradeHistoryNewestGroup[k].Time &&
 			vBinanceTradeHistory.Symbol == binanceTradeHistoryNewestGroup[k].Symbol &&
 			vBinanceTradeHistory.Side == binanceTradeHistoryNewestGroup[k].Side &&
@@ -712,7 +723,7 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 		}
 	}
 
-	return compareResDiff, err
+	return ipMapNeedWait, newData, compareResDiff, err
 }
 
 type binanceTradeHistoryResp struct {
