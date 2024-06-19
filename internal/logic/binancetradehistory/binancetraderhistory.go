@@ -225,7 +225,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	// 数据库无数据，拉取满额6000条数据
 	if 0 >= currentCompareMax {
 		initPull = true
-		resData, err = s.pullAndSetHandle(ctx, traderNum, 120, true) // 执行
+		resData, err = s.pullAndSetHandle(ctx, traderNum, 120, true, 20) // 执行
 		if nil != err {
 			fmt.Println("初始化，执行拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
 		}
@@ -292,7 +292,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		}
 
 		// 不同，开始捕获
-		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, true) // todo 执行，目前猜测最大500条，根据经验拍脑袋
+		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, true, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
 			fmt.Println("日常，执行拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
 		}
@@ -309,7 +309,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 		// 重新拉取，比较两次结果集合
 		// 不同，开始捕获
-		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 10, false) // todo 执行，目前猜测最大500条，根据经验拍脑袋
+		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 10, false, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
 			fmt.Println("日常，执行拉取数据协程异常，比较数据，错误信息：", err, "交易员：", traderNum)
 		}
@@ -467,7 +467,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	return nil
 }
 
-func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool) (resData []*entity.NewBinanceTradeHistory, err error) {
+func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool, initPushIpQueue int) (resData []*entity.NewBinanceTradeHistory, err error) {
 	var (
 		PerPullPerPageCountLimitMax = 50 // 每次并行拉取每页最大条数
 	)
@@ -488,14 +488,26 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 	// 这里注意一定是key是从0开始到size-1的
 	if ipOrderAsc {
 		for i := 0; i < s.ips.Size(); i++ {
-			if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
-				ipsQueue.Push(s.ips.Get(i))
+			if i < initPushIpQueue { // 初始化多少个
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueue.Push(s.ips.Get(i))
+				}
+			} else {
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueueNeedWait.Push(s.ips.Get(i)) // 剩余的扔到等待queue
+				}
 			}
 		}
 	} else {
 		for i := s.ips.Size() - 1; i >= 0; i-- {
-			if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
-				ipsQueue.Push(s.ips.Get(i))
+			if i >= s.ips.Size()-initPushIpQueue { // 初始化多少个
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueue.Push(s.ips.Get(i))
+				}
+			} else {
+				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
+					ipsQueueNeedWait.Push(s.ips.Get(i)) // 剩余的扔到等待queue
+				}
 			}
 		}
 	}
