@@ -225,7 +225,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	// 数据库无数据，拉取满额6000条数据
 	if 0 >= currentCompareMax {
 		initPull = true
-		resData, err = s.pullAndSetHandle(ctx, traderNum, 120, true, 20) // 执行
+		resData, err = s.pullAndSetHandle(ctx, traderNum, 120, true, true, 20) // 执行
 		if nil != err {
 			fmt.Println("初始化，执行拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
 		}
@@ -292,7 +292,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		}
 
 		// 不同，开始捕获
-		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, true, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
+		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, false, true, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
 			fmt.Println("日常，执行拉取数据协程异常，错误信息：", err, "交易员：", traderNum)
 		}
@@ -313,7 +313,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 		// 重新拉取，比较两次结果集合
 		// 不同，开始捕获
-		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 10, false, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
+		resDataCompare, err = s.pullAndSetHandle(ctx, traderNum, 10, false, false, 10) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
 			fmt.Println("日常，执行拉取数据协程异常，比较数据，错误信息：", err, "交易员：", traderNum)
 		}
@@ -475,7 +475,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	return nil
 }
 
-func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool, initPushIpQueue int) (resData []*entity.NewBinanceTradeHistory, err error) {
+func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, isInit bool, ipOrderAsc bool, initPushIpQueue int) (resData []*entity.NewBinanceTradeHistory, err error) {
 	var (
 		PerPullPerPageCountLimitMax = 50 // 每次并行拉取每页最大条数
 	)
@@ -541,7 +541,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			defer wg.Done()
 
 			var (
-				retry               = true
+				retry               bool
 				retryTimes          = 0
 				retryTimesLimit     = 5 // 重试次数
 				successPull         bool
@@ -551,16 +551,36 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			for retryTimes < retryTimesLimit { // 最大重试
 
 				var tmpProxy string
-
-				select {
-				case queueItem := <-ipsQueue.C: // 可用ip，阻塞
-					tmpProxy = queueItem.(string)
-				case queueItem2 := <-ipsQueueNeedWait.C: // 可用ip，阻塞
-					tmpProxy = queueItem2.(string)
-					time.Sleep(time.Second * 2)
-				case <-time.After(time.Minute * 8): // 即使1个ip轮流用，120次查询2秒一次，8分钟超时足够
-					fmt.Println("timeout, exit loop")
-					break
+				if isInit { // 初始化池子的直接抢占
+					select {
+					case queueItem := <-ipsQueue.C: // 可用ip，阻塞
+						tmpProxy = queueItem.(string)
+					case queueItem2 := <-ipsQueueNeedWait.C: // 可用ip，阻塞
+						tmpProxy = queueItem2.(string)
+						time.Sleep(time.Second * 2)
+					case <-time.After(time.Minute * 8): // 即使1个ip轮流用，120次查询2秒一次，8分钟超时足够
+						fmt.Println("timeout, exit loop")
+						break
+					}
+				} else { // 非初始化的，不重试的直接抢占正常池子
+					if !retry {
+						select {
+						case queueItem := <-ipsQueue.C: // 可用ip，阻塞
+							tmpProxy = queueItem.(string)
+						case <-time.After(time.Minute * 8): // 即使1个ip轮流用，120次查询2秒一次，8分钟超时足够
+							fmt.Println("timeout, exit loop")
+							break
+						}
+					} else { // 非初始化的，重试的直接抢占重试池子
+						select {
+						case queueItem2 := <-ipsQueueNeedWait.C: // 可用ip，阻塞
+							tmpProxy = queueItem2.(string)
+							time.Sleep(time.Second * 2)
+						case <-time.After(time.Minute * 8): // 即使1个ip轮流用，120次查询2秒一次，8分钟超时足够
+							fmt.Println("timeout, exit loop")
+							break
+						}
+					}
 				}
 
 				// 拿到了代理，执行
@@ -579,6 +599,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 					if 3999914496956055297 == traderNum {
 						fmt.Println("重试", tmpProxy)
 					}
+
 					retryTimes++
 					continue
 				}
