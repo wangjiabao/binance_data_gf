@@ -508,6 +508,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 							Opened: vPushDataMap.Time,
 							Symbol: vPushDataMap.Symbol,
 							Side:   vPushDataMap.Side,
+							Status: "",
 							Qty:    vPushDataMap.QtyFloat,
 						})
 						if err != nil {
