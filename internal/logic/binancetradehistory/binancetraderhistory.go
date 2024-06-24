@@ -476,7 +476,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			if 0 < len(normalPushData) {
 				// 排序，时间靠前的在前边处理
 				sort.Slice(normalPushData, func(i, j int) bool {
-					return normalPushData[i].Time > normalPushData[j].Time
+					return normalPushData[i].Time < normalPushData[j].Time
 				})
 			}
 		}
@@ -486,7 +486,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		if 0 < len(normalPushData) {
 			// 先查更新仓位，代币，仓位，方向归集好
 			for _, vPushDataMap := range normalPushData {
-				fmt.Println(vPushDataMap)
 				// 查询最新未关仓仓位
 				var (
 					selectOne []*entity.NewBinancePositionHistory
