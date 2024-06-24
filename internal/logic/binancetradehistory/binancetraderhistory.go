@@ -503,7 +503,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 					if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
 						("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
 						// 开仓
-						_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", &do.NewBinancePositionHistory{
+						_, err = tx.Ctx(ctx).Insert("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", &do.NewBinancePositionHistory{
 							Closed: 0,
 							Opened: vPushDataMap.Time,
 							Symbol: vPushDataMap.Symbol,
