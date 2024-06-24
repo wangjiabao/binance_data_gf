@@ -571,7 +571,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 	// 推入下单队列
 	// todo 这种队列的方式可能存在生产者或消费者出现问题，而丢单的情况，可以考虑更换复杂的方式，即使丢单开不起来会影响开单，关单的话少关单，有仓位检测的二重保障
-	if !initPull && 0 >= len(normalPushData) {
+	if !initPull && 0 < len(normalPushData) {
 		s.orderQueue.Push(normalPushData)
 	}
 
