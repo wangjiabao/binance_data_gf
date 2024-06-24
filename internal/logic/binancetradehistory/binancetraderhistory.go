@@ -524,7 +524,8 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 							updateData g.Map
 						)
 
-						if lessThanOrEqualZero(selectOne[0].Qty, vPushDataMap.QtyFloat, 1e-9) {
+						// todo bsc最高精度小数点7位，到了6位的情况非常少，没意义，几乎等于完全平仓
+						if lessThanOrEqualZero(selectOne[0].Qty, vPushDataMap.QtyFloat, 1e-6) {
 							updateData = g.Map{
 								"qty":    0,
 								"closed": gtime.Now().UnixMilli(),
