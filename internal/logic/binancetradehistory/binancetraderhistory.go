@@ -520,19 +520,27 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 					if ("LONG" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) ||
 						("SHORT" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) {
 						// 平空 || 平多
+						var (
+							updateData g.Map
+						)
+
 						if lessThanOrEqualZero(selectOne[0].Qty, vPushDataMap.QtyFloat, 1e-9) {
-							updateData := g.Map{
+							updateData = g.Map{
+								"qty":    0,
+								"closed": gtime.Now().UnixMilli(),
+							}
+						} else {
+							updateData = g.Map{
 								"qty": &gdb.Counter{
 									Field: "qty",
 									Value: -vPushDataMap.QtyFloat, // 加 -值
 								},
-								"closed": gtime.Now().UnixMilli(),
 							}
+						}
 
-							_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
-							if nil != err {
-								return err
-							}
+						_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
+						if nil != err {
+							return err
 						}
 
 					} else if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
