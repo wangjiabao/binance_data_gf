@@ -486,7 +486,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		if 0 < len(normalPushData) {
 			// 先查更新仓位，代币，仓位，方向归集好
 			for _, vPushDataMap := range normalPushData {
-
+				fmt.Println(vPushDataMap)
 				// 查询最新未关仓仓位
 				var (
 					selectOne []*entity.NewBinancePositionHistory
@@ -593,7 +593,8 @@ func (s *sBinanceTraderHistory) ListenThenOrder(ctx context.Context) {
 		if dataInterface = s.orderQueue.Pop(); dataInterface == nil {
 			continue
 		}
-		if data, ok = dataInterface.([]*binanceTrade); ok {
+
+		if data, ok = dataInterface.([]*binanceTrade); !ok {
 			// 处理协程
 			fmt.Println("监听程序，解析队列数据错误：", dataInterface)
 			continue
