@@ -17,6 +17,7 @@ type NewBinancePosition struct {
 	Side         interface{} //
 	PositionSide interface{} //
 	Qty          interface{} //
+	Status       interface{} //
 	CreatedAt    *gtime.Time //
 	UpdatedAt    *gtime.Time //
 }

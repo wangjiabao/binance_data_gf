@@ -13,6 +13,7 @@ type (
 	IBinanceTraderHistory interface {
 		UpdateProxyIp(ctx context.Context) (err error)
 		PullAndOrder(ctx context.Context, traderNum uint64) (err error)
+		ListenThenOrder(ctx context.Context)
 	}
 )
 

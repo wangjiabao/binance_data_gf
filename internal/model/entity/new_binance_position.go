@@ -15,6 +15,7 @@ type NewBinancePosition struct {
 	Side         string      `json:"side"         ` //
 	PositionSide string      `json:"positionSide" ` //
 	Qty          float64     `json:"qty"          ` //
+	Status       int         `json:"status"       ` //
 	CreatedAt    *gtime.Time `json:"createdAt"    ` //
 	UpdatedAt    *gtime.Time `json:"updatedAt"    ` //
 }

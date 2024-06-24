@@ -25,6 +25,7 @@ type NewBinancePositionColumns struct {
 	Side         string //
 	PositionSide string //
 	Qty          string //
+	Status       string //
 	CreatedAt    string //
 	UpdatedAt    string //
 }
@@ -36,6 +37,7 @@ var newBinancePositionColumns = NewBinancePositionColumns{
 	Side:         "side",
 	PositionSide: "position_side",
 	Qty:          "qty",
+	Status:       "status",
 	CreatedAt:    "created_at",
 	UpdatedAt:    "updated_at",
 }

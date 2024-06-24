@@ -26,6 +26,7 @@ type NewBinancePositionHistoryColumns struct {
 	Symbol    string //
 	Side      string //
 	Status    string //
+	Qty       string //
 	CreatedAt string //
 	UpdatedAt string //
 }
@@ -38,6 +39,7 @@ var newBinancePositionHistoryColumns = NewBinancePositionHistoryColumns{
 	Symbol:    "symbol",
 	Side:      "side",
 	Status:    "status",
+	Qty:       "qty",
 	CreatedAt: "created_at",
 	UpdatedAt: "updated_at",
 }

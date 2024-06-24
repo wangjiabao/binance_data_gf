@@ -20,10 +20,10 @@ func New() *sNewBinancePositionHistory {
 	return &sNewBinancePositionHistory{}
 }
 
-func (s *sNewBinancePositionHistory) GetByTraderNumNotClosed(ctx context.Context, traderNum uint64) (binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory, err error) {
-	err = g.Model("new_binance_position_" + strconv.FormatUint(traderNum, 10) + "_history").Ctx(ctx).OrderDesc("id").Scan(&binanceTradeHistoryNewestGroup)
+func (s *sNewBinancePositionHistory) GetByTraderNumNotClosed(ctx context.Context, traderNum uint64) (binancePositionHistoryNewestGroup []*entity.NewBinancePositionHistory, err error) {
+	err = g.Model("new_binance_position_" + strconv.FormatUint(traderNum, 10) + "_history").Ctx(ctx).OrderDesc("id").Scan(&binancePositionHistoryNewestGroup)
 	if nil != err {
-		return binanceTradeHistoryNewestGroup, err
+		return binancePositionHistoryNewestGroup, err
 	}
-	return binanceTradeHistoryNewestGroup, err
+	return binancePositionHistoryNewestGroup, err
 }

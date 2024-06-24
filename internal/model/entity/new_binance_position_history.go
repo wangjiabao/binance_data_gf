@@ -16,6 +16,7 @@ type NewBinancePositionHistory struct {
 	Symbol    string      `json:"symbol"    ` //
 	Side      string      `json:"side"      ` //
 	Status    string      `json:"status"    ` //
+	Qty       float64     `json:"qty"       ` //
 	CreatedAt *gtime.Time `json:"createdAt" ` //
 	UpdatedAt *gtime.Time `json:"updatedAt" ` //
 }

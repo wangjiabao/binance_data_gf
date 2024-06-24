@@ -20,12 +20,22 @@ var (
 		Name:  "trader",
 		Brief: "listen trader",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
-			// ip池子维护
-			initIpUpdateTask(ctx)
-			//addIpUpdateTask(ctx)
+			serviceBinanceTrader := service.BinanceTraderHistory()
+			// 任务1 同步订单
+			go func() {
+				// ip池子维护
+				initIpUpdateTask(ctx, serviceBinanceTrader)
+				//addIpUpdateTask(ctx)
+				updateTradersPeriodically(ctx, serviceBinanceTrader)
+			}()
 
-			updateTradersPeriodically(ctx)
-			return nil
+			// 任务2 监听广播新订单
+			go func() {
+				initListenAndOrderTask(ctx, serviceBinanceTrader)
+			}()
+
+			// 阻塞
+			select {}
 		},
 	}
 )
@@ -35,17 +45,17 @@ var (
 	traderSingleton = make(map[uint64]*gtimer.Entry)
 )
 
-func updateTradersPeriodically(ctx context.Context) {
+func updateTradersPeriodically(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
 	// 每分钟查询数据库以更新交易员任务
 	interval := time.Minute
 
 	for {
-		updateTraders(ctx)
+		updateTraders(ctx, serviceBinanceTrader)
 		time.Sleep(interval)
 	}
 }
 
-func updateTraders(ctx context.Context) {
+func updateTraders(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
 	newTraderIDs, err := fetchTraderIDsFromDB(ctx)
 	if err != nil {
 		fmt.Println("查询数据库时出错:", err)
@@ -62,7 +72,7 @@ func updateTraders(ctx context.Context) {
 	for _, vNewTraderIDs := range newTraderIDs {
 		idMap[vNewTraderIDs] = true
 		if _, ok := traderSingleton[vNewTraderIDs]; !ok { // 不存在新增
-			addTraderTask(ctx, vNewTraderIDs)
+			addTraderTask(ctx, vNewTraderIDs, serviceBinanceTrader)
 		}
 	}
 
@@ -93,17 +103,21 @@ func fetchTraderIDsFromDB(ctx context.Context) ([]uint64, error) {
 	return traderNums, err
 }
 
-func initIpUpdateTask(ctx context.Context) {
-	err := service.BinanceTraderHistory().UpdateProxyIp(ctx)
+func initIpUpdateTask(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
+	err := serviceBinanceTrader.UpdateProxyIp(ctx)
 	if err != nil {
 		fmt.Println("ip更新任务运行时出错:", err)
 	}
 }
 
-func addIpUpdateTask(ctx context.Context) {
+func initListenAndOrderTask(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
+	serviceBinanceTrader.ListenThenOrder(ctx)
+}
+
+func addIpUpdateTask(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
 	// 任务
 	handle := func(ctx context.Context) {
-		err := service.BinanceTraderHistory().UpdateProxyIp(ctx)
+		err := serviceBinanceTrader.UpdateProxyIp(ctx)
 		if err != nil {
 			fmt.Println("ip更新任务运行时出错:", err)
 		}
@@ -113,11 +127,11 @@ func addIpUpdateTask(ctx context.Context) {
 	gtimer.AddSingleton(ctx, time.Minute*20, handle)
 }
 
-func addTraderTask(ctx context.Context, traderID uint64) {
+func addTraderTask(ctx context.Context, traderID uint64, serviceBinanceTrader service.IBinanceTraderHistory) {
 	// 任务
 	handle := func(ctx context.Context) {
 		relTraderId := traderID // go1.22以前有循环变量陷阱，不思考这里是否也会如此，直接用临时变量解决
-		err := service.BinanceTraderHistory().PullAndOrder(ctx, relTraderId)
+		err := serviceBinanceTrader.PullAndOrder(ctx, relTraderId)
 		if err != nil {
 			fmt.Println("任务运行时出错:", "交易员信息:", relTraderId, "错误信息:", err)
 		}

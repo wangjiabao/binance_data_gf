@@ -12,7 +12,7 @@ import (
 
 type (
 	INewBinancePosition interface {
-		GetByTraderNumNotClosed(ctx context.Context, traderNum uint64) (binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory, err error)
+		GetByTraderNumNotClosed(ctx context.Context, traderNum uint64) (binancePositionNewestGroup []*entity.NewBinancePosition, err error)
 	}
 )
 

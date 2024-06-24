@@ -12,10 +12,13 @@ import (
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/grpool"
+	"github.com/gogf/gf/v2/os/gtime"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,11 +27,13 @@ import (
 
 type (
 	sBinanceTraderHistory struct {
+		// 全局存储
 		pool *grpool.Pool
 		// 针对binance拉取交易员下单接口定制的数据结构，每页数据即使同一个ip不同的交易员是可以返回数据，在逻辑上和这个设计方式要达成共识再设计后续的程序逻辑。
 		// 考虑实际的业务场景，接口最多6000条，每次查50条，最多需要120个槽位。假设，每10个槽位一循环，意味着对应同一个交易员每次并行使用10个ip查询10页数据。
 		//ips map[int]*proxyData
-		ips *gmap.IntStrMap
+		ips        *gmap.IntStrMap
+		orderQueue *gqueue.Queue
 	}
 )
 
@@ -40,6 +45,7 @@ func New() *sBinanceTraderHistory {
 	return &sBinanceTraderHistory{
 		grpool.New(), // 这里是请求协程池子，可以配合着可并行请求binance的限制使用，来限制最大共存数，后续jobs都将排队，考虑到上层的定时任务
 		gmap.NewIntStrMap(true),
+		gqueue.New(), // 下单顺序队列
 	}
 }
 
@@ -49,6 +55,10 @@ func IsEqual(f1, f2 float64) bool {
 	} else {
 		return f2-f1 < 0.000000001
 	}
+}
+
+func lessThanOrEqualZero(a, b float64, epsilon float64) bool {
+	return a-b < epsilon || math.Abs(a-b) < epsilon
 }
 
 type proxyData struct {
@@ -221,7 +231,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 	currentCompareMax = len(binanceTradeHistoryNewestGroup)
 
-	insertData := make([]*do.NewBinanceTradeHistory, 0)
 	ipMapNeedWait := make(map[string]bool, 0) // 刚使用的ip，大概率加快查询速度，2s以内别用的ip
 	// 数据库无数据，拉取满额6000条数据
 	if 0 >= currentCompareMax {
@@ -408,6 +417,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		resData = tmpResData
 	}
 
+	insertData := make([]*do.NewBinanceTradeHistory, 0)
 	// 数据倒序插入，程序走到这里，最多会拉下来初始化：6000，日常：500，最少10条（前边的条件限制）
 	for i := len(resData) - 1; i >= 0; i-- {
 		insertData = append(insertData, &do.NewBinanceTradeHistory{
@@ -433,7 +443,105 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		return nil
 	}
 
+	// 推入下单队列
+	// todo 这种队列的方式可能存在生产者或消费者出现问题，而丢单的情况，可以考虑更换复杂的方式，即使丢单开不起来会影响开单，关单的话少关单，有仓位检测的二重保障
+	normalPushDataMap := make(map[string]*binanceTrade, 0)
+	normalPushData := make([]*binanceTrade, 0)
+	if !initPull {
+		// 代币
+		for _, vInsertData := range insertData {
+			// 代币，仓位，方向，同一秒 暂时看作一次下单
+			if _, ok := normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+vInsertData.Time.(string)]; !ok {
+				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+vInsertData.Time.(string)] = &binanceTrade{
+					TraderNum: strconv.FormatUint(traderNum, 10),
+					Type:      vInsertData.PositionSide.(string),
+					Symbol:    vInsertData.Symbol.(string),
+					Side:      vInsertData.Side.(string),
+					Position:  "",
+					Qty:       "",
+					QtyFloat:  vInsertData.Qty.(float64),
+				}
+			} else { // 到这里一定存在了，累加
+				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+vInsertData.Time.(string)].QtyFloat += vInsertData.Qty.(float64)
+			}
+		}
+	}
+
+	for _, vPushDataMap := range normalPushDataMap {
+		normalPushData = append(normalPushData, vPushDataMap)
+	}
+
+	if 0 < len(normalPushData) {
+		// 排序，时间靠前的在前边处理
+		sort.Slice(normalPushData, func(i, j int) bool {
+			return normalPushData[i].Time > normalPushData[j].Time
+		})
+	}
+
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
+		// 先查更新仓位，代币，仓位，方向归集好
+		for _, vPushDataMap := range normalPushData {
+
+			// 查询最新未关仓仓位
+			var (
+				selectOne []*entity.NewBinancePositionHistory
+			)
+			err = tx.Ctx(ctx).Model("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history").
+				Where("symbol=?", vPushDataMap.Symbol).Where("side=?", vPushDataMap.Type).Where("opened<=?", vPushDataMap.Time).Where("closed=?", 0).Where("qty>?", 0).
+				OrderDesc("id").Limit(1).Scan(&selectOne)
+			if err != nil {
+				return err
+			}
+
+			if 0 >= len(selectOne) {
+				// 新增仓位
+				if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
+					("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
+					// 开仓
+					_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", &do.NewBinancePositionHistory{
+						Closed: 0,
+						Opened: vPushDataMap.Time,
+						Symbol: vPushDataMap.Symbol,
+						Side:   vPushDataMap.Side,
+						Qty:    vPushDataMap.QtyFloat,
+					})
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				// 修改仓位
+				if ("LONG" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) ||
+					("SHORT" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) {
+					// 平空 || 平多
+					if lessThanOrEqualZero(selectOne[0].Qty, vPushDataMap.QtyFloat, 1e-9) {
+						updateData := g.Map{
+							"qty": &gdb.Counter{
+								Field: "qty",
+								Value: -vPushDataMap.QtyFloat, // 加 -值
+							},
+							"closed": gtime.Now().UnixMilli(),
+						}
+
+						_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
+
+					}
+
+				} else if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
+					("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
+					// 开多 || 开空
+					updateData := g.Map{
+						"qty": &gdb.Counter{
+							Field: "qty",
+							Value: vPushDataMap.QtyFloat,
+						},
+					}
+
+					_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
+				}
+			}
+		}
+
 		batchSize := 500
 		for i := 0; i < len(insertData); i += batchSize {
 			end := i + batchSize
@@ -454,7 +562,48 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		return err
 	}
 
+	// 推入下单队列
+	// todo 这种队列的方式可能存在生产者或消费者出现问题，而丢单的情况，可以考虑更换复杂的方式，即使丢单开不起来会影响开单，关单的话少关单，有仓位检测的二重保障
+	if !initPull && 0 >= len(normalPushData) {
+		s.orderQueue.Push(normalPushData)
+	}
+
 	return nil
+}
+
+func (s *sBinanceTraderHistory) ListenThenOrder(ctx context.Context) {
+	// 消费者，不停读取队列数据并输出到终端
+	var (
+		err error
+	)
+	consumerPool := grpool.New()
+	for {
+		var (
+			dataInterface interface{}
+			data          []*binanceTrade
+			ok            bool
+		)
+		if dataInterface = s.orderQueue.Pop(); dataInterface == nil {
+			continue
+		}
+		if data, ok = dataInterface.([]*binanceTrade); ok {
+			// 处理协程
+			fmt.Println("监听程序，解析队列数据错误：", dataInterface)
+			continue
+		}
+
+		// 处理协程
+		err = consumerPool.Add(ctx, func(ctx context.Context) {
+			for _, v := range data {
+				fmt.Println(v)
+			}
+		})
+
+		if nil != err {
+			fmt.Println(err)
+		}
+	}
+
 }
 
 func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool, ipMapNeedWait map[string]bool) (resData []*entity.NewBinanceTradeHistory, err error) {
@@ -481,9 +630,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			if _, ok := ipMapNeedWait[s.ips.Get(i)]; ok {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueueNeedWait.Push(s.ips.Get(i))
-					if 3949214983441029120 == traderNum {
-						fmt.Println("暂时别用的ip", s.ips.Get(i))
-					}
+					//if 3949214983441029120 == traderNum {
+					//	fmt.Println("暂时别用的ip", s.ips.Get(i))
+					//}
 				}
 			} else {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
@@ -496,9 +645,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 			if _, ok := ipMapNeedWait[s.ips.Get(i)]; ok {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
 					ipsQueueNeedWait.Push(s.ips.Get(i))
-					if 3949214983441029120 == traderNum {
-						fmt.Println("暂时别用的ip", s.ips.Get(i))
-					}
+					//if 3949214983441029120 == traderNum {
+					//	fmt.Println("暂时别用的ip", s.ips.Get(i))
+					//}
 				}
 			} else {
 				if 0 < len(s.ips.Get(i)) { // 1页对应的代理ip的map的key是0
@@ -529,9 +678,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 				if 0 < ipsQueue.Len() { // 有剩余先用剩余比较快，不用等2s
 					if v := ipsQueue.Pop(); nil != v {
 						tmpProxy = v.(string)
-						if 3949214983441029120 == traderNum {
-							fmt.Println("直接开始", tmpProxy)
-						}
+						//if 3949214983441029120 == traderNum {
+						//	fmt.Println("直接开始", tmpProxy)
+						//}
 					}
 				}
 
@@ -540,9 +689,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 					select {
 					case queueItem2 := <-ipsQueueNeedWait.C: // 可用ip，阻塞
 						tmpProxy = queueItem2.(string)
-						if 3949214983441029120 == traderNum {
-							fmt.Println("等待", tmpProxy)
-						}
+						//if 3949214983441029120 == traderNum {
+						//	fmt.Println("等待", tmpProxy)
+						//}
 						time.Sleep(time.Second * 2)
 					case <-time.After(time.Minute * 8): // 即使1个ip轮流用，120次查询2秒一次，8分钟超时足够
 						fmt.Println("timeout, exit loop")
@@ -563,9 +712,9 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 
 				// 需要重试
 				if retry {
-					if 3949214983441029120 == traderNum {
-						fmt.Println("异常需要重试", tmpProxy)
-					}
+					//if 3949214983441029120 == traderNum {
+					//	fmt.Println("异常需要重试", tmpProxy)
+					//}
 
 					retryTimes++
 					continue
@@ -612,6 +761,14 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 					tmpActiveBuy := "false"
 					if item.ActiveBuy {
 						tmpActiveBuy = "true"
+					}
+
+					if "LONG" != item.PositionSide && "SHORT" != item.PositionSide {
+						fmt.Println("不识别的仓位，页数：", i, "交易员：", traderNum)
+					}
+
+					if "BUY" != item.Side && "SELL" != item.Side {
+						fmt.Println("不识别的方向，页数：", i, "交易员：", traderNum)
 					}
 
 					resData = append(resData, &entity.NewBinanceTradeHistory{
@@ -740,6 +897,18 @@ type binanceTradeHistoryDataList struct {
 	ActiveBuy           bool
 }
 
+type binanceTrade struct {
+	TraderNum string
+	Time      string
+	Symbol    string
+	Type      string
+	Position  string
+	Side      string
+	Price     string
+	Qty       string
+	QtyFloat  float64
+}
+
 func (s *sBinanceTraderHistory) requestBinanceTradeHistory(pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, error) {
 	var (
 		resp   *http.Response
@@ -863,4 +1032,59 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 	}
 
 	return res, false, nil
+}
+
+func (s *sBinanceTraderHistory) requestOrder(pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, error) {
+	var (
+		resp   *http.Response
+		res    []*binanceTradeHistoryDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/trade-history"
+	)
+
+	// 构造请求
+	contentType := "application/json"
+	data := `{"pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
+	resp, err = http.Post(apiUrl, contentType, strings.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	//fmt.Println(string(b))
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	var l *binanceTradeHistoryResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	if nil == l.Data {
+		return res, nil
+	}
+
+	if nil == l.Data.List {
+		return res, nil
+	}
+
+	res = make([]*binanceTradeHistoryDataList, 0)
+	for _, v := range l.Data.List {
+		res = append(res, v)
+	}
+
+	return res, nil
 }

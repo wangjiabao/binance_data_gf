@@ -18,6 +18,7 @@ type NewBinancePositionHistory struct {
 	Symbol    interface{} //
 	Side      interface{} //
 	Status    interface{} //
+	Qty       interface{} //
 	CreatedAt *gtime.Time //
 	UpdatedAt *gtime.Time //
 }
