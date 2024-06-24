@@ -451,8 +451,9 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		// 代币
 		for _, vInsertData := range insertData {
 			// 代币，仓位，方向，同一秒 暂时看作一次下单
-			if _, ok := normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+vInsertData.Time.(string)]; !ok {
-				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+vInsertData.Time.(string)] = &binanceTrade{
+			timeTmp := vInsertData.Time.(uint64)
+			if _, ok := normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)]; !ok {
+				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)] = &binanceTrade{
 					TraderNum: strconv.FormatUint(traderNum, 10),
 					Type:      vInsertData.PositionSide.(string),
 					Symbol:    vInsertData.Symbol.(string),
@@ -460,84 +461,89 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 					Position:  "",
 					Qty:       "",
 					QtyFloat:  vInsertData.Qty.(float64),
+					Time:      timeTmp,
 				}
 			} else { // 到这里一定存在了，累加
-				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+vInsertData.Time.(string)].QtyFloat += vInsertData.Qty.(float64)
+				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)].QtyFloat += vInsertData.Qty.(float64)
+			}
+		}
+
+		if 0 < len(normalPushDataMap) {
+			for _, vPushDataMap := range normalPushDataMap {
+				normalPushData = append(normalPushData, vPushDataMap)
+			}
+
+			if 0 < len(normalPushData) {
+				// 排序，时间靠前的在前边处理
+				sort.Slice(normalPushData, func(i, j int) bool {
+					return normalPushData[i].Time > normalPushData[j].Time
+				})
 			}
 		}
 	}
 
-	for _, vPushDataMap := range normalPushDataMap {
-		normalPushData = append(normalPushData, vPushDataMap)
-	}
-
-	if 0 < len(normalPushData) {
-		// 排序，时间靠前的在前边处理
-		sort.Slice(normalPushData, func(i, j int) bool {
-			return normalPushData[i].Time > normalPushData[j].Time
-		})
-	}
-
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
-		// 先查更新仓位，代币，仓位，方向归集好
-		for _, vPushDataMap := range normalPushData {
+		if 0 < len(normalPushData) {
+			// 先查更新仓位，代币，仓位，方向归集好
+			for _, vPushDataMap := range normalPushData {
 
-			// 查询最新未关仓仓位
-			var (
-				selectOne []*entity.NewBinancePositionHistory
-			)
-			err = tx.Ctx(ctx).Model("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history").
-				Where("symbol=?", vPushDataMap.Symbol).Where("side=?", vPushDataMap.Type).Where("opened<=?", vPushDataMap.Time).Where("closed=?", 0).Where("qty>?", 0).
-				OrderDesc("id").Limit(1).Scan(&selectOne)
-			if err != nil {
-				return err
-			}
-
-			if 0 >= len(selectOne) {
-				// 新增仓位
-				if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
-					("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
-					// 开仓
-					_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", &do.NewBinancePositionHistory{
-						Closed: 0,
-						Opened: vPushDataMap.Time,
-						Symbol: vPushDataMap.Symbol,
-						Side:   vPushDataMap.Side,
-						Qty:    vPushDataMap.QtyFloat,
-					})
-					if err != nil {
-						return err
-					}
+				// 查询最新未关仓仓位
+				var (
+					selectOne []*entity.NewBinancePositionHistory
+				)
+				err = tx.Ctx(ctx).Model("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history").
+					Where("symbol=?", vPushDataMap.Symbol).Where("side=?", vPushDataMap.Type).Where("opened<=?", vPushDataMap.Time).Where("closed=?", 0).Where("qty>?", 0).
+					OrderDesc("id").Limit(1).Scan(&selectOne)
+				if err != nil {
+					return err
 				}
-			} else {
-				// 修改仓位
-				if ("LONG" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) ||
-					("SHORT" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) {
-					// 平空 || 平多
-					if lessThanOrEqualZero(selectOne[0].Qty, vPushDataMap.QtyFloat, 1e-9) {
+
+				if 0 >= len(selectOne) {
+					// 新增仓位
+					if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
+						("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
+						// 开仓
+						_, err = tx.Ctx(ctx).Insert("new_binance_trade_"+strconv.FormatUint(traderNum, 10)+"_history", &do.NewBinancePositionHistory{
+							Closed: 0,
+							Opened: vPushDataMap.Time,
+							Symbol: vPushDataMap.Symbol,
+							Side:   vPushDataMap.Side,
+							Qty:    vPushDataMap.QtyFloat,
+						})
+						if err != nil {
+							return err
+						}
+					}
+				} else {
+					// 修改仓位
+					if ("LONG" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) ||
+						("SHORT" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) {
+						// 平空 || 平多
+						if lessThanOrEqualZero(selectOne[0].Qty, vPushDataMap.QtyFloat, 1e-9) {
+							updateData := g.Map{
+								"qty": &gdb.Counter{
+									Field: "qty",
+									Value: -vPushDataMap.QtyFloat, // 加 -值
+								},
+								"closed": gtime.Now().UnixMilli(),
+							}
+
+							_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
+
+						}
+
+					} else if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
+						("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
+						// 开多 || 开空
 						updateData := g.Map{
 							"qty": &gdb.Counter{
 								Field: "qty",
-								Value: -vPushDataMap.QtyFloat, // 加 -值
+								Value: vPushDataMap.QtyFloat,
 							},
-							"closed": gtime.Now().UnixMilli(),
 						}
 
 						_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
-
 					}
-
-				} else if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
-					("SHORT" == vPushDataMap.Type && "SELL" == vPushDataMap.Side) {
-					// 开多 || 开空
-					updateData := g.Map{
-						"qty": &gdb.Counter{
-							Field: "qty",
-							Value: vPushDataMap.QtyFloat,
-						},
-					}
-
-					_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
 				}
 			}
 		}
@@ -899,7 +905,7 @@ type binanceTradeHistoryDataList struct {
 
 type binanceTrade struct {
 	TraderNum string
-	Time      string
+	Time      uint64
 	Symbol    string
 	Type      string
 	Position  string
