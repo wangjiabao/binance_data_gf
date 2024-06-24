@@ -483,6 +483,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	}
 
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
+		// 日常更新数据
 		if 0 < len(normalPushData) {
 			// 先查更新仓位，代币，仓位，方向归集好
 			for _, vPushDataMap := range normalPushData {
@@ -529,7 +530,9 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 							}
 
 							_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
-
+							if nil != err {
+								return err
+							}
 						}
 
 					} else if ("LONG" == vPushDataMap.Type && "BUY" == vPushDataMap.Side) ||
@@ -543,6 +546,9 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 						}
 
 						_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
+						if nil != err {
+							return err
+						}
 					}
 				}
 			}
