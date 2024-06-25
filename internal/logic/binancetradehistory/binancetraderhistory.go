@@ -1060,7 +1060,7 @@ func (s *sBinanceTraderHistory) requestSystemOrder(Orders []*Order) (string, err
 
 	// 创建http.Client并设置超时时间
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 20 * time.Second,
 	}
 
 	// 构造http请求
