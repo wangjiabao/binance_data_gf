@@ -4,6 +4,7 @@ import (
 	"binance_data_gf/internal/model/do"
 	"binance_data_gf/internal/model/entity"
 	"binance_data_gf/internal/service"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -123,6 +124,7 @@ func requestProxy() ([]*proxyData, error) {
 	return res, nil
 }
 
+// UpdateProxyIp ip更新
 func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
 	// 20个客户端代理，这里注意一定是key是从0开始到size-1的
 	s.ips.Set(0, "http://43.133.175.121:888/")
@@ -183,6 +185,7 @@ func (s *sBinanceTraderHistory) UpdateProxyIp(ctx context.Context) (err error) {
 	//return nil
 }
 
+// PullAndOrder 拉取binance数据
 func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint64) (err error) {
 	start := time.Now()
 
@@ -454,7 +457,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		timeTmp := vInsertData.Time.(uint64)
 		if _, ok := pushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)]; !ok {
 			pushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)] = &binanceTrade{
-				TraderNum: strconv.FormatUint(traderNum, 10),
+				TraderNum: traderNum,
 				Type:      vInsertData.PositionSide.(string),
 				Symbol:    vInsertData.Symbol.(string),
 				Side:      vInsertData.Side.(string),
@@ -597,42 +600,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	return nil
 }
 
-func (s *sBinanceTraderHistory) ListenThenOrder(ctx context.Context) {
-	// 消费者，不停读取队列数据并输出到终端
-	var (
-		err error
-	)
-	consumerPool := grpool.New()
-	for {
-		var (
-			dataInterface interface{}
-			data          []*binanceTrade
-			ok            bool
-		)
-		if dataInterface = s.orderQueue.Pop(); dataInterface == nil {
-			continue
-		}
-
-		if data, ok = dataInterface.([]*binanceTrade); !ok {
-			// 处理协程
-			fmt.Println("监听程序，解析队列数据错误：", dataInterface)
-			continue
-		}
-
-		// 处理协程
-		err = consumerPool.Add(ctx, func(ctx context.Context) {
-			for _, v := range data {
-				fmt.Println(v)
-			}
-		})
-
-		if nil != err {
-			fmt.Println(err)
-		}
-	}
-
-}
-
+// pullAndSetHandle 拉取的binance数据细节
 func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool, ipMapNeedWait map[string]bool) (resData []*entity.NewBinanceTradeHistory, err error) {
 	var (
 		PerPullPerPageCountLimitMax = 50 // 每次并行拉取每页最大条数
@@ -828,6 +796,7 @@ func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum 
 	return resData, nil
 }
 
+// compareBinanceTradeHistoryPageOne 拉取的binance数据细节
 func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int64, traderNum uint64, binanceTradeHistoryNewestGroup []*entity.NewBinanceTradeHistory) (ipMapNeedWait map[string]bool, newData []*binanceTradeHistoryDataList, compareResDiff bool, err error) {
 	// 试探开始
 	var (
@@ -898,6 +867,87 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 	return ipMapNeedWait, newData, compareResDiff, err
 }
 
+// PullAndClose 拉取binance数据
+func (s *sBinanceTraderHistory) PullAndClose(ctx context.Context) {
+	//var (
+	//	err error
+	//)
+}
+
+// ListenThenOrder 监听拉取的binance数据
+func (s *sBinanceTraderHistory) ListenThenOrder(ctx context.Context) {
+	// 消费者，不停读取队列数据并输出到终端
+	var (
+		err error
+	)
+	consumerPool := grpool.New()
+	for {
+		var (
+			dataInterface interface{}
+			data          []*binanceTrade
+			ok            bool
+		)
+		if dataInterface = s.orderQueue.Pop(); dataInterface == nil {
+			continue
+		}
+
+		if data, ok = dataInterface.([]*binanceTrade); !ok {
+			// 处理协程
+			fmt.Println("监听程序，解析队列数据错误：", dataInterface)
+			continue
+		}
+
+		// 处理协程
+		err = consumerPool.Add(ctx, func(ctx context.Context) {
+			// 初始化一个
+			order := make([]*Order, 0)
+			order = append(order, &Order{
+				Uid:       0,
+				BaseMoney: "",
+				Data:      make([]*Data, 0),
+				InitOrder: 0,
+				Rate:      "",
+				TraderNum: 0,
+			})
+
+			// 同一个交易员的
+			for _, v := range data {
+				order[0].TraderNum = v.TraderNum
+				order[0].Data = append(order[0].Data, &Data{
+					Symbol:     v.Symbol,
+					Type:       v.Type,
+					Price:      v.Price,
+					Side:       v.Side,
+					Qty:        v.Qty,
+					Proportion: "",
+					Position:   v.Position,
+				})
+
+				fmt.Println(v)
+			}
+
+			if 0 >= len(order[0].Data) {
+				return
+			}
+
+			// 请求下单
+			var res string
+			res, err = s.requestSystemOrder(order)
+			if "ok" != res {
+				fmt.Println("请求下单错,结果信息：", res, err)
+				for _, vData := range order[0].Data {
+					fmt.Println("请求下单错误，订单信息：", vData)
+				}
+			}
+		})
+
+		if nil != err {
+			fmt.Println(err)
+		}
+	}
+
+}
+
 type binanceTradeHistoryResp struct {
 	Data *binanceTradeHistoryData
 }
@@ -924,8 +974,26 @@ type binanceTradeHistoryDataList struct {
 	ActiveBuy           bool
 }
 
+type binancePositionHistoryResp struct {
+	Data *binancePositionHistoryData
+}
+
+type binancePositionHistoryData struct {
+	Total uint64
+	List  []*binancePositionHistoryDataList
+}
+
+type binancePositionHistoryDataList struct {
+	Time   uint64
+	Symbol string
+	Side   string
+	Opened uint64
+	Closed uint64
+	Status string
+}
+
 type binanceTrade struct {
-	TraderNum string
+	TraderNum uint64
 	Time      uint64
 	Symbol    string
 	Type      string
@@ -936,21 +1004,76 @@ type binanceTrade struct {
 	QtyFloat  float64
 }
 
-func (s *sBinanceTraderHistory) requestBinanceTradeHistory(pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, error) {
+type Data struct {
+	Symbol     string `json:"symbol"`
+	Type       string `json:"type"`
+	Price      string `json:"price"`
+	Side       string `json:"side"`
+	Qty        string `json:"qty"`
+	Proportion string `json:"proportion"`
+	Position   string `json:"position"`
+}
+
+type Order struct {
+	Uid       uint64  `json:"uid"`
+	BaseMoney string  `json:"base_money"`
+	Data      []*Data `json:"data"`
+	InitOrder uint64  `json:"init_order"`
+	Rate      string  `json:"rate"`
+	TraderNum uint64  `json:"trader_num"`
+}
+
+type SendBody struct {
+	Orders    []*Order `json:"orders"`
+	InitOrder uint64   `json:"init_order"`
+}
+
+type ListenTraderAndUserOrderRequest struct {
+	SendBody SendBody `json:"send_body"`
+}
+
+type RequestResp struct {
+	Status string
+}
+
+// 请求下单接口
+func (s *sBinanceTraderHistory) requestSystemOrder(Orders []*Order) (string, error) {
 	var (
 		resp   *http.Response
-		res    []*binanceTradeHistoryDataList
 		b      []byte
 		err    error
-		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/trade-history"
+		apiUrl = "http://127.0.0.1:8125/api/binanceexchange_user/listen_trader_and_user_order_new"
 	)
 
-	// 构造请求
-	contentType := "application/json"
-	data := `{"pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
-	resp, err = http.Post(apiUrl, contentType, strings.NewReader(data))
+	// 构造请求数据
+	requestBody := ListenTraderAndUserOrderRequest{
+		SendBody: SendBody{
+			Orders: Orders,
+		},
+	}
+
+	// 序列化为JSON
+	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, err
+		return "", err
+	}
+
+	// 创建http.Client并设置超时时间
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// 构造http请求
+	req, err := http.NewRequest("POST", apiUrl, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// 发送请求
+	resp, err = client.Do(req)
+	if err != nil {
+		return "", err
 	}
 
 	// 结果
@@ -961,36 +1084,23 @@ func (s *sBinanceTraderHistory) requestBinanceTradeHistory(pageNumber int64, pag
 		}
 	}(resp.Body)
 
-	b, err = ioutil.ReadAll(resp.Body)
-	//fmt.Println(string(b))
+	b, err = io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)
-		return nil, err
+		return "", err
 	}
 
-	var l *binanceTradeHistoryResp
-	err = json.Unmarshal(b, &l)
+	var r *RequestResp
+	err = json.Unmarshal(b, &r)
 	if err != nil {
 		fmt.Println(err)
-		return nil, err
+		return "", err
 	}
 
-	if nil == l.Data {
-		return res, nil
-	}
-
-	if nil == l.Data.List {
-		return res, nil
-	}
-
-	res = make([]*binanceTradeHistoryDataList, 0)
-	for _, v := range l.Data.List {
-		res = append(res, v)
-	}
-
-	return res, nil
+	return r.Status, nil
 }
 
+// 请求binance的下单历史接口
 func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string, pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, bool, error) {
 	var (
 		resp   *http.Response
@@ -1061,7 +1171,135 @@ func (s *sBinanceTraderHistory) requestProxyBinanceTradeHistory(proxyAddr string
 	return res, false, nil
 }
 
+// 请求binance的仓位历史接口
+func (s *sBinanceTraderHistory) requestProxyBinancePositionHistory(proxyAddr string, pageNumber int64, pageSize int64, portfolioId uint64) ([]*binancePositionHistoryDataList, bool, error) {
+	var (
+		resp   *http.Response
+		res    []*binancePositionHistoryDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/position-history"
+	)
+
+	proxy, err := url.Parse(proxyAddr)
+	if err != nil {
+		fmt.Println(err)
+		return nil, true, err
+	}
+	netTransport := &http.Transport{
+		Proxy:                 http.ProxyURL(proxy),
+		MaxIdleConnsPerHost:   10,
+		ResponseHeaderTimeout: time.Second * time.Duration(5),
+	}
+	httpClient := &http.Client{
+		Timeout:   time.Second * 10,
+		Transport: netTransport,
+	}
+
+	// 构造请求
+	contentType := "application/json"
+	data := `{"sort":"OPENING","pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
+	resp, err = httpClient.Post(apiUrl, contentType, strings.NewReader(data))
+	if err != nil {
+		fmt.Println(333, err)
+		return nil, true, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(222, err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(111, err)
+		return nil, true, err
+	}
+
+	var l *binancePositionHistoryResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		return nil, true, err
+	}
+
+	if nil == l.Data {
+		return res, true, nil
+	}
+
+	res = make([]*binancePositionHistoryDataList, 0)
+	if nil == l.Data.List {
+		return res, false, nil
+	}
+
+	res = make([]*binancePositionHistoryDataList, 0)
+	for _, v := range l.Data.List {
+		res = append(res, v)
+	}
+
+	return res, false, nil
+}
+
+// 暂时弃用
 func (s *sBinanceTraderHistory) requestOrder(pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, error) {
+	var (
+		resp   *http.Response
+		res    []*binanceTradeHistoryDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/trade-history"
+	)
+
+	// 构造请求
+	contentType := "application/json"
+	data := `{"pageNumber":` + strconv.FormatInt(pageNumber, 10) + `,"pageSize":` + strconv.FormatInt(pageSize, 10) + `,portfolioId:` + strconv.FormatUint(portfolioId, 10) + `}`
+	resp, err = http.Post(apiUrl, contentType, strings.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	//fmt.Println(string(b))
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	var l *binanceTradeHistoryResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	if nil == l.Data {
+		return res, nil
+	}
+
+	if nil == l.Data.List {
+		return res, nil
+	}
+
+	res = make([]*binanceTradeHistoryDataList, 0)
+	for _, v := range l.Data.List {
+		res = append(res, v)
+	}
+
+	return res, nil
+}
+
+// 暂时弃用
+func (s *sBinanceTraderHistory) requestBinanceTradeHistory(pageNumber int64, pageSize int64, portfolioId uint64) ([]*binanceTradeHistoryDataList, error) {
 	var (
 		resp   *http.Response
 		res    []*binanceTradeHistoryDataList

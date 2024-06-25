@@ -34,6 +34,14 @@ var (
 				initListenAndOrderTask(ctx, serviceBinanceTrader)
 			}()
 
+			// 任务2 处理平仓
+			go func() {
+				for {
+					time.Sleep(10 * time.Second) // 依赖ip等待初始化完成，后续完成任务后，间隔10s执行，经验预估10s肯定够用了
+					pullAndCloseTask(ctx, serviceBinanceTrader)
+				}
+			}()
+
 			// 阻塞
 			select {}
 		},
@@ -112,6 +120,10 @@ func initIpUpdateTask(ctx context.Context, serviceBinanceTrader service.IBinance
 
 func initListenAndOrderTask(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
 	serviceBinanceTrader.ListenThenOrder(ctx)
+}
+
+func pullAndCloseTask(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
+	serviceBinanceTrader.PullAndClose(ctx)
 }
 
 func addIpUpdateTask(ctx context.Context, serviceBinanceTrader service.IBinanceTraderHistory) {
