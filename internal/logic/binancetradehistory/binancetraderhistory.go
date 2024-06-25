@@ -445,48 +445,47 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 	// 推入下单队列
 	// todo 这种队列的方式可能存在生产者或消费者出现问题，而丢单的情况，可以考虑更换复杂的方式，即使丢单开不起来会影响开单，关单的话少关单，有仓位检测的二重保障
-	normalPushDataMap := make(map[string]*binanceTrade, 0)
-	normalPushData := make([]*binanceTrade, 0)
-	if !initPull {
-		// 代币
-		for _, vInsertData := range insertData {
-			// 代币，仓位，方向，同一秒 暂时看作一次下单
-			timeTmp := vInsertData.Time.(uint64)
-			if _, ok := normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)]; !ok {
-				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)] = &binanceTrade{
-					TraderNum: strconv.FormatUint(traderNum, 10),
-					Type:      vInsertData.PositionSide.(string),
-					Symbol:    vInsertData.Symbol.(string),
-					Side:      vInsertData.Side.(string),
-					Position:  "",
-					Qty:       "",
-					QtyFloat:  vInsertData.Qty.(float64),
-					Time:      timeTmp,
-				}
-			} else { // 到这里一定存在了，累加
-				normalPushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)].QtyFloat += vInsertData.Qty.(float64)
+	pushDataMap := make(map[string]*binanceTrade, 0)
+	pushData := make([]*binanceTrade, 0)
+
+	// 代币
+	for _, vInsertData := range insertData {
+		// 代币，仓位，方向，同一秒 暂时看作一次下单
+		timeTmp := vInsertData.Time.(uint64)
+		if _, ok := pushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)]; !ok {
+			pushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)] = &binanceTrade{
+				TraderNum: strconv.FormatUint(traderNum, 10),
+				Type:      vInsertData.PositionSide.(string),
+				Symbol:    vInsertData.Symbol.(string),
+				Side:      vInsertData.Side.(string),
+				Position:  "",
+				Qty:       "",
+				QtyFloat:  vInsertData.Qty.(float64),
+				Time:      timeTmp,
 			}
+		} else { // 到这里一定存在了，累加
+			pushDataMap[vInsertData.Symbol.(string)+vInsertData.PositionSide.(string)+vInsertData.Side.(string)+strconv.FormatUint(timeTmp, 10)].QtyFloat += vInsertData.Qty.(float64)
+		}
+	}
+
+	if 0 < len(pushDataMap) {
+		for _, vPushDataMap := range pushDataMap {
+			pushData = append(pushData, vPushDataMap)
 		}
 
-		if 0 < len(normalPushDataMap) {
-			for _, vPushDataMap := range normalPushDataMap {
-				normalPushData = append(normalPushData, vPushDataMap)
-			}
-
-			if 0 < len(normalPushData) {
-				// 排序，时间靠前的在前边处理
-				sort.Slice(normalPushData, func(i, j int) bool {
-					return normalPushData[i].Time < normalPushData[j].Time
-				})
-			}
+		if 0 < len(pushData) {
+			// 排序，时间靠前的在前边处理
+			sort.Slice(pushData, func(i, j int) bool {
+				return pushData[i].Time < pushData[j].Time
+			})
 		}
 	}
 
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
 		// 日常更新数据
-		if 0 < len(normalPushData) {
+		if 0 < len(pushData) {
 			// 先查更新仓位，代币，仓位，方向归集好
-			for _, vPushDataMap := range normalPushData {
+			for _, vPushDataMap := range pushData {
 				// 查询最新未关仓仓位
 				var (
 					selectOne []*entity.NewBinancePositionHistory
@@ -585,8 +584,8 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 
 	// 推入下单队列
 	// todo 这种队列的方式可能存在生产者或消费者出现问题，而丢单的情况，可以考虑更换复杂的方式，即使丢单开不起来会影响开单，关单的话少关单，有仓位检测的二重保障
-	if !initPull && 0 < len(normalPushData) {
-		s.orderQueue.Push(normalPushData)
+	if !initPull && 0 < len(pushData) {
+		s.orderQueue.Push(pushData)
 	}
 
 	return nil
