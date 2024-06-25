@@ -481,6 +481,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		}
 	}
 
+	fmt.Println(traderNum, "测试")
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
 		// 日常更新数据
 		if 0 < len(pushData) {
