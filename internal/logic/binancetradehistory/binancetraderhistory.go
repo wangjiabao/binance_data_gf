@@ -481,7 +481,6 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		}
 	}
 
-	fmt.Println(traderNum, "测试")
 	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
 		// 日常更新数据
 		if 0 < len(pushData) {
@@ -530,6 +529,9 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 								"qty":    0,
 								"closed": gtime.Now().UnixMilli(),
 							}
+
+							// 平仓前仓位
+							vPushDataMap.Position = strconv.FormatFloat(vPushDataMap.QtyFloat, 'f', -1, 64)
 						} else {
 							updateData = g.Map{
 								"qty": &gdb.Counter{
@@ -537,6 +539,9 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 									Value: -vPushDataMap.QtyFloat, // 加 -值
 								},
 							}
+
+							// 平仓前仓位
+							vPushDataMap.Position = strconv.FormatFloat(selectOne[0].Qty, 'f', -1, 64)
 						}
 
 						_, err = tx.Ctx(ctx).Update("new_binance_position_"+strconv.FormatUint(traderNum, 10)+"_history", updateData, "id", selectOne[0].Id)
