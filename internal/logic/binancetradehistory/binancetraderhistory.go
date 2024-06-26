@@ -923,7 +923,15 @@ func (s *sBinanceTraderHistory) ListenThenOrder(ctx context.Context) {
 					Position:   v.Position,
 				})
 
-				fmt.Println(v)
+				fmt.Println(Data{
+					Symbol:     v.Symbol,
+					Type:       v.Type,
+					Price:      v.Price,
+					Side:       v.Side,
+					Qty:        strconv.FormatFloat(v.QtyFloat, 'f', -1, 64),
+					Proportion: "",
+					Position:   v.Position,
+				})
 			}
 
 			if 0 >= len(order[0].Data) {
