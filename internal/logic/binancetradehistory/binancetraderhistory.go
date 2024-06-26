@@ -918,7 +918,7 @@ func (s *sBinanceTraderHistory) ListenThenOrder(ctx context.Context) {
 					Type:       v.Type,
 					Price:      v.Price,
 					Side:       v.Side,
-					Qty:        v.Qty,
+					Qty:        strconv.FormatFloat(v.QtyFloat, 'f', -1, 64),
 					Proportion: "",
 					Position:   v.Position,
 				})
