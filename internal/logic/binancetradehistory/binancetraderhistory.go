@@ -359,7 +359,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	}
 
 	// 时长
-	fmt.Printf("程序拉取部分，开始 %v, 时长: %v\n", start, time.Since(start))
+	fmt.Printf("程序拉取部分，开始 %v, 时长: %v, 交易员: %v\n", start, time.Since(start), traderNum)
 
 	// 非初始化，截断数据
 	if !initPull {
