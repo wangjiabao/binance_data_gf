@@ -311,6 +311,8 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 			return nil
 		}
 
+		fmt.Println("新数据：交易员：", traderNum)
+
 		// 不同，开始捕获
 		resData, err = s.pullAndSetHandle(ctx, traderNum, 10, true, ipMapNeedWait) // todo 执行，目前猜测最大500条，根据经验拍脑袋
 		if nil != err {
@@ -597,6 +599,7 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 		s.orderQueue.Push(pushData)
 	}
 
+	fmt.Println("更新结束，交易员：", traderNum)
 	return nil
 }
 
