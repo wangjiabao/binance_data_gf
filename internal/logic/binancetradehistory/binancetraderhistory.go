@@ -848,6 +848,9 @@ func (s *sBinanceTraderHistory) compareBinanceTradeHistoryPageOne(compareMax int
 		return ipMapNeedWait, newData, false, nil
 	}
 	for k, vBinanceTradeHistory := range binanceTradeHistory {
+		if 3887627985594221568 == traderNum {
+			fmt.Println("测试记录：", vBinanceTradeHistory)
+		}
 		newData = append(newData, vBinanceTradeHistory)
 		if vBinanceTradeHistory.Time == binanceTradeHistoryNewestGroup[k].Time &&
 			vBinanceTradeHistory.Symbol == binanceTradeHistoryNewestGroup[k].Symbol &&
