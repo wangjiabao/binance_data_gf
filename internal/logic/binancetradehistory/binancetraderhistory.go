@@ -603,6 +603,153 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	return nil
 }
 
+// PullAndOrderNew 拉取binance数据，仓位，根据cookie
+func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum uint64, ipProxyUse int) (err error) {
+	start := time.Now()
+	var (
+		trader             []*entity.Trader
+		zyTraderCookie     []*entity.ZyTraderCookie
+		binancePosition    []*entity.TraderPosition
+		binancePositionMap map[string]*entity.TraderPosition
+		reqResData         []*binancePositionDataList
+	)
+
+	// 数据库必须信息
+	err = g.Model("trader_position_" + strconv.FormatUint(traderNum, 10)).Ctx(ctx).Scan(&binancePosition)
+	if nil != err {
+		return err
+	}
+	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
+	for _, vBinancePosition := range binancePosition {
+		binancePositionMap[vBinancePosition.Symbol+vBinancePosition.PositionSide] = vBinancePosition
+	}
+
+	// 数据库必须信息
+	err = g.Model("trader").Ctx(ctx).Where("portfolioId=?", traderNum).OrderDesc("id").Limit(1).Scan(&trader)
+	if nil != err {
+		return err
+	}
+	if 0 >= len(trader) {
+		fmt.Println("新，不存在trader表：信息", traderNum, ipProxyUse)
+		return nil
+	}
+
+	// 数据库必须信息
+	err = g.Model("zy_trader_cookie").Ctx(ctx).Where("trader_id=? and is_open=?", trader[0].Id, 1).
+		OrderDesc("update_time").Limit(1).Scan(&zyTraderCookie)
+	if nil != err {
+		return err
+	}
+	if 0 >= len(zyTraderCookie) || 0 >= len(zyTraderCookie[0].Cookie) || 0 >= len(zyTraderCookie[0].Token) {
+		fmt.Println("新，不存在zy_trader_cookie表有效信息：信息", traderNum, ipProxyUse, zyTraderCookie)
+		return nil
+	}
+
+	// 执行
+	var (
+		retry           = false
+		retryTimes      = 0
+		retryTimesLimit = 5 // 重试次数
+		cookieErr       = false
+	)
+
+	for retryTimes < retryTimesLimit { // 最大重试
+		//reqResData, retry, err = s.requestProxyBinancePositionHistoryNew(s.ips.Get(ipProxyUse%(s.ips.Size()-1)), traderNum)
+		reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, zyTraderCookie[0].Cookie, zyTraderCookie[0].Token)
+		return nil
+		// 需要重试
+		if retry {
+			retryTimes++
+			continue
+		}
+
+		// cookie不好使
+		if 0 >= len(reqResData) {
+			retryTimes++
+			cookieErr = true
+			continue
+		} else {
+			cookieErr = false
+			break
+		}
+	}
+
+	if cookieErr {
+		fmt.Println("新，cookie错误，信息", traderNum, ipProxyUse, reqResData)
+		return nil
+	}
+
+	insertData := make([]*do.TraderPosition, 0)
+	updateData := make([]*do.TraderPosition, 0)
+	for _, vReqResData := range reqResData {
+		// 新增
+		var (
+			currentAmount float64
+		)
+		currentAmount, err = strconv.ParseFloat(vReqResData.PositionAmount, 64)
+		if nil != err {
+			fmt.Println("新，解析金额出错，信息", vReqResData, currentAmount, traderNum)
+		}
+		currentAmount = math.Abs(currentAmount) // 绝对值
+
+		if _, ok := binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide]; !ok {
+			insertData = append(insertData, &do.TraderPosition{
+				Symbol:         vReqResData.Symbol,
+				PositionSide:   vReqResData.PositionSide,
+				PositionAmount: currentAmount,
+			})
+		} else {
+			// 数量无变化
+			if IsEqual(currentAmount, binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount) {
+				continue
+			}
+
+			updateData = append(updateData, &do.TraderPosition{
+				Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+				Symbol:         vReqResData.Symbol,
+				PositionSide:   vReqResData.PositionSide,
+				PositionAmount: currentAmount,
+			})
+		}
+	}
+
+	if 0 >= len(insertData) && 0 >= len(updateData) {
+		return nil
+	}
+
+	// 时长
+	fmt.Printf("程序拉取部分，开始 %v, 时长: %v, 交易员: %v\n", start, time.Since(start), traderNum)
+	err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
+		batchSize := 500
+		for i := 0; i < len(insertData); i += batchSize {
+			end := i + batchSize
+			if end > len(insertData) {
+				end = len(insertData)
+			}
+			batch := insertData[i:end]
+
+			_, err = tx.Ctx(ctx).Insert("trader_position_"+strconv.FormatUint(traderNum, 10), batch)
+			if nil != err {
+				return err
+			}
+		}
+
+		for i := 0; i < len(updateData); i++ {
+			_, err = tx.Ctx(ctx).Update("trader_position_"+strconv.FormatUint(traderNum, 10), updateData, "id", updateData[i].Id)
+			if nil != err {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if nil != err {
+		return err
+	}
+
+	return nil
+}
+
 // pullAndSetHandle 拉取的binance数据细节
 func (s *sBinanceTraderHistory) pullAndSetHandle(ctx context.Context, traderNum uint64, CountPage int, ipOrderAsc bool, ipMapNeedWait map[string]bool) (resData []*entity.NewBinanceTradeHistory, err error) {
 	var (
@@ -985,6 +1132,16 @@ type binanceTradeHistoryDataList struct {
 	ActiveBuy           bool
 }
 
+type binancePositionResp struct {
+	Data []*binancePositionDataList
+}
+
+type binancePositionDataList struct {
+	Symbol         string
+	PositionSide   string
+	PositionAmount string
+}
+
 type binancePositionHistoryResp struct {
 	Data *binancePositionHistoryData
 }
@@ -1247,6 +1404,149 @@ func (s *sBinanceTraderHistory) requestProxyBinancePositionHistory(proxyAddr str
 
 	res = make([]*binancePositionHistoryDataList, 0)
 	for _, v := range l.Data.List {
+		res = append(res, v)
+	}
+
+	return res, false, nil
+}
+
+// 请求binance的持有仓位历史接口，新
+func (s *sBinanceTraderHistory) requestProxyBinancePositionHistoryNew(proxyAddr string, portfolioId uint64, cookie string, token string) ([]*binancePositionDataList, bool, error) {
+	var (
+		resp   *http.Response
+		res    []*binancePositionDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-data/positions?portfolioId=" + strconv.FormatUint(portfolioId, 10)
+	)
+
+	proxy, err := url.Parse(proxyAddr)
+	if err != nil {
+		fmt.Println(err)
+		return nil, true, err
+	}
+	netTransport := &http.Transport{
+		Proxy:                 http.ProxyURL(proxy),
+		MaxIdleConnsPerHost:   10,
+		ResponseHeaderTimeout: time.Second * time.Duration(5),
+	}
+	httpClient := &http.Client{
+		Timeout:   time.Second * 10,
+		Transport: netTransport,
+	}
+
+	// 构造请求
+	req, err := http.NewRequest("GET", apiUrl, nil)
+	if err != nil {
+		fmt.Println(444444, err)
+		return nil, true, err
+	}
+
+	// 添加头信息
+	req.Header.Set("Clienttype", "web")
+	req.Header.Set("Csrftoken", token)
+	req.Header.Set("Cookie", cookie)
+
+	// 构造请求
+	resp, err = httpClient.Do(req)
+	if err != nil {
+		fmt.Println(444444, err)
+		return nil, true, err
+	}
+
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(4444, err)
+		return nil, true, err
+	}
+
+	var l *binancePositionResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		return nil, true, err
+	}
+
+	if nil == l.Data {
+		return res, true, nil
+	}
+
+	res = make([]*binancePositionDataList, 0)
+	for _, v := range l.Data {
+		res = append(res, v)
+	}
+
+	return res, false, nil
+}
+
+// 请求binance的持有仓位历史接口，新
+func (s *sBinanceTraderHistory) requestBinancePositionHistoryNew(portfolioId uint64, cookie string, token string) ([]*binancePositionDataList, bool, error) {
+	var (
+		resp   *http.Response
+		res    []*binancePositionDataList
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-data/positions?portfolioId=" + strconv.FormatUint(portfolioId, 10)
+	)
+
+	httpClient := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	// 构造请求
+	req, err := http.NewRequest("GET", apiUrl, nil)
+	if err != nil {
+		fmt.Println(444444, err)
+		return nil, true, err
+	}
+
+	// 添加头信息
+	req.Header = http.Header{
+		"Clienttype": {"web"},
+		"Csrftoken":  {token},
+		"Cookie":     {cookie},
+	}
+
+	// 发送请求
+	resp, err = httpClient.Do(req)
+	if err != nil {
+		fmt.Println(444444, err)
+		return nil, true, err
+	}
+
+	// 构造请求
+	resp, err = httpClient.Do(req)
+	if err != nil {
+		fmt.Println(444444, err)
+		return nil, true, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(44444, err)
+		}
+	}(resp.Body)
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(4444, err)
+		return nil, true, err
+	}
+
+	fmt.Println(string(b), 1)
+
+	var l *binancePositionResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		return nil, true, err
+	}
+
+	if nil == l.Data {
+		return res, true, nil
+	}
+
+	res = make([]*binancePositionDataList, 0)
+	for _, v := range l.Data {
 		res = append(res, v)
 	}
 

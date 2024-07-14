@@ -15,6 +15,8 @@ type (
 		UpdateProxyIp(ctx context.Context) (err error)
 		// PullAndOrder 拉取binance数据
 		PullAndOrder(ctx context.Context, traderNum uint64) (err error)
+		// PullAndOrderNew 拉取binance数据，仓位，根据cookie
+		PullAndOrderNew(ctx context.Context, traderNum uint64, ipProxyUse int) (err error)
 		// PullAndClose 拉取binance数据
 		PullAndClose(ctx context.Context)
 		// ListenThenOrder 监听拉取的binance数据

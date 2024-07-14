@@ -9,4 +9,5 @@ import (
 	_ "binance_data_gf/internal/logic/newbinanceposition"
 	_ "binance_data_gf/internal/logic/newbinancepositionhistory"
 	_ "binance_data_gf/internal/logic/newbinancetrader"
+	_ "binance_data_gf/internal/logic/trader"
 )
