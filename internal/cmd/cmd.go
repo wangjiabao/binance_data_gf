@@ -123,6 +123,10 @@ func updateTradersNew(ctx context.Context, serviceBinanceTrader service.IBinance
 	// 不存在新增
 	idMap := make(map[uint64]bool, 0)
 	for k, vNewTraderIDs := range newTraderIDs {
+		if 4037244644304291841 != vNewTraderIDs { // todo 测试
+			continue
+		}
+
 		idMap[vNewTraderIDs] = true
 		if _, ok := traderSingletonNew[vNewTraderIDs]; !ok { // 不存在新增
 			addTraderTaskNew(ctx, vNewTraderIDs, serviceBinanceTrader, k)
