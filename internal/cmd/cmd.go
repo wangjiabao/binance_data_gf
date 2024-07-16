@@ -123,10 +123,6 @@ func updateTradersNew(ctx context.Context, serviceBinanceTrader service.IBinance
 	// 不存在新增
 	idMap := make(map[uint64]bool, 0)
 	for k, vNewTraderIDs := range newTraderIDs {
-		if 4037244644304291841 != vNewTraderIDs { // todo 测试
-			continue
-		}
-
 		idMap[vNewTraderIDs] = true
 		if _, ok := traderSingletonNew[vNewTraderIDs]; !ok { // 不存在新增
 			addTraderTaskNew(ctx, vNewTraderIDs, serviceBinanceTrader, k)
@@ -173,14 +169,17 @@ func fetchTraderIDsFromDBNew(ctx context.Context) ([]uint64, error) {
 	}
 
 	for _, vTraders := range traders {
-		var traderNum uint64
-		traderNum, err = strconv.ParseUint(vTraders.PortfolioId, 10, 64)
-		if nil != err {
-			fmt.Println("新，添加交易员，解析交易员trader_num异常：", vTraders)
-			continue
-		}
+		// todo 测试
+		if 154 == vTraders.Id || 155 == vTraders.Id || 156 == vTraders.Id {
+			var traderNum uint64
+			traderNum, err = strconv.ParseUint(vTraders.PortfolioId, 10, 64)
+			if nil != err {
+				fmt.Println("新，添加交易员，解析交易员trader_num异常：", vTraders)
+				continue
+			}
 
-		traderNums = append(traderNums, traderNum)
+			traderNums = append(traderNums, traderNum)
+		}
 	}
 
 	return traderNums, err
