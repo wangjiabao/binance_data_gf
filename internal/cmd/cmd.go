@@ -170,7 +170,7 @@ func fetchTraderIDsFromDBNew(ctx context.Context) ([]uint64, error) {
 
 	for _, vTraders := range traders {
 		// todo 测试
-		if 154 == vTraders.Id || 155 == vTraders.Id || 156 == vTraders.Id {
+		if 154 == vTraders.Id || 155 == vTraders.Id {
 			var traderNum uint64
 			traderNum, err = strconv.ParseUint(vTraders.PortfolioId, 10, 64)
 			if nil != err {
