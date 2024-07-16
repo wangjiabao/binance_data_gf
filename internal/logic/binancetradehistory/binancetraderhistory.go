@@ -1092,6 +1092,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 				if _, ok := userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)]; !ok {
 					continue
 				}
+				
+				fmt.Println(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)])
 
 				// 认为是0
 				if lessThanOrEqualZero(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)], 0, 1e-7) {
@@ -1132,6 +1134,13 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 
 				// 未开启过仓位
 				if _, ok := userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)]; !ok {
+					continue
+				}
+
+				fmt.Println(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)])
+
+				// 认为是0
+				if lessThanOrEqualZero(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)], 0, 1e-7) {
 					continue
 				}
 
