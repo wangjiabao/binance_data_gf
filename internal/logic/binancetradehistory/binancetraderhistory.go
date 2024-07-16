@@ -644,7 +644,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		return err
 	}
 	if 0 >= len(zyTraderCookie) || 0 >= len(zyTraderCookie[0].Cookie) || 0 >= len(zyTraderCookie[0].Token) {
-		//fmt.Println("新，不存在zy_trader_cookie表有效信息：信息", traderNum, ipProxyUse, zyTraderCookie)
 		return nil
 	}
 
@@ -678,7 +677,21 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 	}
 
 	if cookieErr {
-		//fmt.Println("新，cookie错误，信息", traderNum, ipProxyUse, reqResData)
+		fmt.Println("新，cookie错误，信息", traderNum, reqResData)
+		err = g.DB().Transaction(context.TODO(), func(ctx context.Context, tx gdb.TX) error {
+			zyTraderCookie[0].IsOpen = 0
+			_, err = tx.Ctx(ctx).Update("zy_trader_cookie", zyTraderCookie[0], "id", zyTraderCookie[0].Id)
+			if nil != err {
+				return err
+			}
+
+			return nil
+		})
+		if nil != err {
+			fmt.Println("新，更新数据库错误，信息", traderNum, err)
+			return err
+		}
+
 		return nil
 	}
 
