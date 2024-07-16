@@ -1016,7 +1016,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 			userOrderTwo []*entity.NewUserOrderTwo
 		)
 		err = g.Model("new_user_order_two_"+strconv.FormatInt(int64(tmpUserBindTraders.UserId), 10)).Ctx(ctx).
-			Where("trader_id=? and symbol", tmpTrader.Id).
+			Where("trader_id=?", tmpTrader.Id).
 			Scan(&userOrderTwo)
 		if nil != err {
 			return err
@@ -1092,8 +1092,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 				if _, ok := userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)]; !ok {
 					continue
 				}
-				
-				fmt.Println(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)])
 
 				// 认为是0
 				if lessThanOrEqualZero(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)], 0, 1e-7) {
@@ -1136,8 +1134,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 				if _, ok := userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)]; !ok {
 					continue
 				}
-
-				fmt.Println(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)])
 
 				// 认为是0
 				if lessThanOrEqualZero(userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)], 0, 1e-7) {
@@ -1208,7 +1204,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 					fmt.Println(err)
 					return
 				}
-				fmt.Println(binanceOrderRes, orderInfoRes)
 
 				// 下单异常
 				if 0 >= binanceOrderRes.OrderId {
@@ -1286,8 +1281,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 					fmt.Println("新，下单错误，记录信息错误，信息", err, traderNum, tmpUpdateData, tmpUserBindTraders)
 					return
 				}
-
-				fmt.Println(tmpUpdateData, lastPositionData, tmpUserBindTraders, tmpUsers, tmpTrader)
 			})
 			if nil != err {
 				fmt.Println("新，添加下单任务异常，修改仓位，错误信息：", err, traderNum, vUpdateData, tmpUserBindTraders)
