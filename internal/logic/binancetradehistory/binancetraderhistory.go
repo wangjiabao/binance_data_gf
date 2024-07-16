@@ -998,7 +998,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 					return
 				}
 
-				fmt.Println("新的仓位：", tmpInsertData, tmpUserBindTraders, tmpUsers, tmpTrader)
 				return
 			})
 			if nil != err {
