@@ -678,7 +678,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 	}
 
 	if cookieErr {
-		fmt.Println("新，cookie错误，信息", traderNum, ipProxyUse, reqResData)
+		//fmt.Println("新，cookie错误，信息", traderNum, ipProxyUse, reqResData)
 		return nil
 	}
 
