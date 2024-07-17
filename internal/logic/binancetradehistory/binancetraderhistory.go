@@ -837,6 +837,11 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 			continue
 		}
 
+		// todo 测试
+		if 47 != tmpUserBindTraders.UserId && 48 != tmpUserBindTraders.UserId {
+			continue
+		}
+
 		tmpTrader := trader[0]
 		tmpUsers := usersMap[tmpUserBindTraders.UserId]
 		if 0 >= len(tmpUsers.ApiSecret) || 0 >= len(tmpUsers.ApiKey) {

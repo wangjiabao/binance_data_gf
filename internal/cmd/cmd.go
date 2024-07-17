@@ -169,17 +169,14 @@ func fetchTraderIDsFromDBNew(ctx context.Context) ([]uint64, error) {
 	}
 
 	for _, vTraders := range traders {
-		// todo 测试
-		if 154 == vTraders.Id || 155 == vTraders.Id {
-			var traderNum uint64
-			traderNum, err = strconv.ParseUint(vTraders.PortfolioId, 10, 64)
-			if nil != err {
-				fmt.Println("新，添加交易员，解析交易员trader_num异常：", vTraders)
-				continue
-			}
-
-			traderNums = append(traderNums, traderNum)
+		var traderNum uint64
+		traderNum, err = strconv.ParseUint(vTraders.PortfolioId, 10, 64)
+		if nil != err {
+			fmt.Println("新，添加交易员，解析交易员trader_num异常：", vTraders)
+			continue
 		}
+
+		traderNums = append(traderNums, traderNum)
 	}
 
 	return traderNums, err
