@@ -242,7 +242,8 @@ func addTraderTaskNew(ctx context.Context, traderID uint64, serviceBinanceTrader
 	}
 
 	// 每秒1次
-	traderSingletonNew[traderID] = gtimer.AddSingleton(ctx, time.Second, handle)
+	// todo 测试
+	traderSingletonNew[traderID] = gtimer.AddSingleton(ctx, time.Second*10, handle)
 	fmt.Println("新，添加成功交易员:", traderID)
 }
 
