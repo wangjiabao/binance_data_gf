@@ -610,11 +610,12 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum uint64, ipProxyUse int) (err error) {
 	start := time.Now()
 	var (
-		trader             []*entity.Trader
-		zyTraderCookie     []*entity.ZyTraderCookie
-		binancePosition    []*entity.TraderPosition
-		binancePositionMap map[string]*entity.TraderPosition
-		reqResData         []*binancePositionDataList
+		trader                    []*entity.Trader
+		zyTraderCookie            []*entity.ZyTraderCookie
+		binancePosition           []*entity.TraderPosition
+		binancePositionMap        map[string]*entity.TraderPosition
+		binancePositionMapCompare map[string]*entity.TraderPosition
+		reqResData                []*binancePositionDataList
 	)
 
 	// 数据库必须信息
@@ -623,8 +624,10 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		return err
 	}
 	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
+	binancePositionMapCompare = make(map[string]*entity.TraderPosition, 0)
 	for _, vBinancePosition := range binancePosition {
 		binancePositionMap[vBinancePosition.Symbol+vBinancePosition.PositionSide] = vBinancePosition
+		binancePositionMapCompare[vBinancePosition.Symbol+vBinancePosition.PositionSide] = vBinancePosition
 	}
 
 	// 数据库必须信息
@@ -695,37 +698,193 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		return nil
 	}
 
+	// 用于数据库更新
 	insertData := make([]*do.TraderPosition, 0)
 	updateData := make([]*do.TraderPosition, 0)
+	// 用于下单
+	orderInsertData := make([]*do.TraderPosition, 0)
+	orderUpdateData := make([]*do.TraderPosition, 0)
 	for _, vReqResData := range reqResData {
 		// 新增
 		var (
-			currentAmount float64
+			currentAmount    float64
+			currentAmountAbs float64
 		)
 		currentAmount, err = strconv.ParseFloat(vReqResData.PositionAmount, 64)
 		if nil != err {
 			fmt.Println("新，解析金额出错，信息", vReqResData, currentAmount, traderNum)
 		}
-		currentAmount = math.Abs(currentAmount) // 绝对值
+		currentAmountAbs = math.Abs(currentAmount) // 绝对值
 
 		if _, ok := binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide]; !ok {
-			insertData = append(insertData, &do.TraderPosition{
-				Symbol:         vReqResData.Symbol,
-				PositionSide:   vReqResData.PositionSide,
-				PositionAmount: currentAmount,
-			})
+			if "BOTH" != vReqResData.PositionSide { // 单项持仓
+				// 加入数据库
+				insertData = append(insertData, &do.TraderPosition{
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   vReqResData.PositionSide,
+					PositionAmount: currentAmountAbs,
+				})
+
+				// 下单
+				if IsEqual(currentAmountAbs, 0) {
+					continue
+				}
+
+				orderInsertData = append(orderInsertData, &do.TraderPosition{
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   vReqResData.PositionSide,
+					PositionAmount: currentAmountAbs,
+				})
+			} else {
+				// 加入数据库
+				insertData = append(insertData, &do.TraderPosition{
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   vReqResData.PositionSide,
+					PositionAmount: currentAmount, // 正负数保持
+				})
+
+				// 模拟为多空仓，下单，todo 组合式的判断应该时牢靠的
+				var tmpPositionSide string
+				if IsEqual(currentAmount, 0) {
+					continue
+				} else if math.Signbit(currentAmount) {
+					// 模拟空
+					tmpPositionSide = "SHORT"
+					orderInsertData = append(orderInsertData, &do.TraderPosition{
+						Symbol:         vReqResData.Symbol,
+						PositionSide:   tmpPositionSide,
+						PositionAmount: currentAmountAbs, // 变成绝对值
+					})
+				} else {
+					// 模拟多
+					tmpPositionSide = "LONG"
+					orderInsertData = append(orderInsertData, &do.TraderPosition{
+						Symbol:         vReqResData.Symbol,
+						PositionSide:   tmpPositionSide,
+						PositionAmount: currentAmountAbs, // 变成绝对值
+					})
+				}
+			}
 		} else {
 			// 数量无变化
-			if IsEqual(currentAmount, binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount) {
-				continue
-			}
+			if "BOTH" != vReqResData.PositionSide {
+				if IsEqual(currentAmountAbs, binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount) {
+					continue
+				}
 
-			updateData = append(updateData, &do.TraderPosition{
-				Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
-				Symbol:         vReqResData.Symbol,
-				PositionSide:   vReqResData.PositionSide,
-				PositionAmount: currentAmount,
-			})
+				updateData = append(updateData, &do.TraderPosition{
+					Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   vReqResData.PositionSide,
+					PositionAmount: currentAmountAbs,
+				})
+
+				orderUpdateData = append(orderUpdateData, &do.TraderPosition{
+					Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   vReqResData.PositionSide,
+					PositionAmount: currentAmountAbs,
+				})
+			} else {
+				if IsEqual(currentAmount, binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount) {
+					continue
+				}
+
+				updateData = append(updateData, &do.TraderPosition{
+					Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   vReqResData.PositionSide,
+					PositionAmount: currentAmount, // 正负数保持
+				})
+
+				// 第一步：构造虚拟的上一次仓位，空或多或无
+				// 这里修改一下历史仓位的信息，方便程序在后续的流程中使用，模拟both的positionAmount为正数时，修改仓位对应的多仓方向的数据，为负数时修改空仓位的数据，0时不处理
+				if _, ok = binancePositionMap[vReqResData.Symbol+"SHORT"]; !ok {
+					fmt.Println("新，缺少仓位SHORT，信息", binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide])
+					continue
+				}
+				if _, ok = binancePositionMap[vReqResData.Symbol+"LONG"]; !ok {
+					fmt.Println("新，缺少仓位LONG，信息", binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide])
+					continue
+				}
+
+				var lastPositionSide string // 上次仓位
+				binancePositionMapCompare[vReqResData.Symbol+"SHORT"] = &entity.TraderPosition{
+					Id:             binancePositionMapCompare[vReqResData.Symbol+"SHORT"].Id,
+					Symbol:         binancePositionMapCompare[vReqResData.Symbol+"SHORT"].Symbol,
+					PositionSide:   binancePositionMapCompare[vReqResData.Symbol+"SHORT"].PositionSide,
+					PositionAmount: 0,
+					CreatedAt:      binancePositionMapCompare[vReqResData.Symbol+"SHORT"].CreatedAt,
+					UpdatedAt:      binancePositionMapCompare[vReqResData.Symbol+"SHORT"].UpdatedAt,
+				}
+				binancePositionMapCompare[vReqResData.Symbol+"LONG"] = &entity.TraderPosition{
+					Id:             binancePositionMapCompare[vReqResData.Symbol+"LONG"].Id,
+					Symbol:         binancePositionMapCompare[vReqResData.Symbol+"LONG"].Symbol,
+					PositionSide:   binancePositionMapCompare[vReqResData.Symbol+"LONG"].PositionSide,
+					PositionAmount: 0,
+					CreatedAt:      binancePositionMapCompare[vReqResData.Symbol+"LONG"].CreatedAt,
+					UpdatedAt:      binancePositionMapCompare[vReqResData.Symbol+"LONG"].UpdatedAt,
+				}
+
+				if IsEqual(binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount, 0) { // both仓为0
+					// 认为两仓都无
+
+				} else if math.Signbit(binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount) {
+					lastPositionSide = "SHORT"
+					binancePositionMapCompare[vReqResData.Symbol+"SHORT"].PositionAmount = math.Abs(binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount)
+				} else {
+					lastPositionSide = "LONG"
+					binancePositionMapCompare[vReqResData.Symbol+"LONG"].PositionAmount = math.Abs(binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].PositionAmount)
+				}
+
+				// 本次仓位
+				var tmpPositionSide string
+				if IsEqual(currentAmount, 0) { // 本次仓位是0
+					if 0 >= len(lastPositionSide) {
+						// 本次和上一次仓位都是0，应该不会走到这里
+						fmt.Println("新，仓位异常逻辑，信息", binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide])
+						continue
+					}
+
+					// 仍为是一次完全平仓，仓位和上一次保持一致
+					tmpPositionSide = lastPositionSide
+				} else if math.Signbit(currentAmount) { // 判断有无符号
+					// 第二步：本次仓位
+
+					// 上次和本次相反需要平上次
+					if "LONG" == lastPositionSide {
+						orderUpdateData = append(orderUpdateData, &do.TraderPosition{
+							Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+							Symbol:         vReqResData.Symbol,
+							PositionSide:   lastPositionSide,
+							PositionAmount: float64(0),
+						})
+					}
+
+					tmpPositionSide = "SHORT"
+				} else {
+					// 第二步：本次仓位
+
+					// 上次和本次相反需要平上次
+					if "SHORT" == lastPositionSide {
+						orderUpdateData = append(orderUpdateData, &do.TraderPosition{
+							Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+							Symbol:         vReqResData.Symbol,
+							PositionSide:   lastPositionSide,
+							PositionAmount: float64(0),
+						})
+					}
+
+					tmpPositionSide = "LONG"
+				}
+
+				orderUpdateData = append(orderUpdateData, &do.TraderPosition{
+					Id:             binancePositionMap[vReqResData.Symbol+vReqResData.PositionSide].Id,
+					Symbol:         vReqResData.Symbol,
+					PositionSide:   tmpPositionSide,
+					PositionAmount: currentAmountAbs,
+				})
+			}
 		}
 	}
 
@@ -765,7 +924,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 	}
 
 	// 推送订单，数据库已初始化仓位，新仓库
-	if 0 >= len(binancePositionMap) {
+	if 0 >= len(binancePositionMapCompare) {
 		fmt.Println("初始化仓位成功，交易员信息", traderNum)
 		return nil
 	}
@@ -850,7 +1009,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		}
 
 		// 新增仓位
-		for _, vInsertData := range insertData {
+		for _, vInsertData := range orderInsertData {
 			// 一个新symbol通常3个开仓方向short，long，both，屏蔽一下未真实开仓的
 			tmpInsertData := vInsertData
 			if lessThanOrEqualZero(tmpInsertData.PositionAmount.(float64), 0, 1e-7) {
@@ -1019,7 +1178,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		}
 
 		// 判断需要修改仓位
-		if 0 >= len(updateData) {
+		if 0 >= len(orderUpdateData) {
 			continue
 		}
 
@@ -1064,13 +1223,13 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		}
 
 		// 修改仓位
-		for _, vUpdateData := range updateData {
+		for _, vUpdateData := range orderUpdateData {
 			tmpUpdateData := vUpdateData
-			if _, ok := binancePositionMap[vUpdateData.Symbol.(string)+vUpdateData.PositionSide.(string)]; !ok {
+			if _, ok := binancePositionMapCompare[vUpdateData.Symbol.(string)+vUpdateData.PositionSide.(string)]; !ok {
 				fmt.Println("新，添加下单任务异常，修改仓位，错误信息：", err, traderNum, vUpdateData, tmpUserBindTraders)
 				continue
 			}
-			lastPositionData := binancePositionMap[vUpdateData.Symbol.(string)+vUpdateData.PositionSide.(string)]
+			lastPositionData := binancePositionMapCompare[vUpdateData.Symbol.(string)+vUpdateData.PositionSide.(string)]
 
 			if _, ok := symbolsMap[tmpUpdateData.Symbol.(string)]; !ok {
 				fmt.Println("新，代币信息无效，信息", tmpUpdateData, tmpUserBindTraders)
