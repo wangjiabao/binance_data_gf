@@ -987,6 +987,31 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 		symbolsMap[vSymbols.Symbol+"USDT"] = vSymbols
 	}
 
+	// 获取交易员和用户的最新保证金信息
+	var (
+		userInfos   []*entity.NewUserInfo
+		traderInfos []*entity.NewTraderInfo
+	)
+	err = g.Model("new_user_info").Ctx(ctx).Scan(&userInfos)
+	if nil != err {
+		return err
+	}
+	// 处理
+	userInfosMap := make(map[uint]*entity.NewUserInfo, 0)
+	for _, vUserInfos := range userInfos {
+		userInfosMap[vUserInfos.UserId] = vUserInfos
+	}
+
+	err = g.Model("new_trader_info").Ctx(ctx).Scan(&traderInfos)
+	if nil != err {
+		return err
+	}
+	// 处理
+	traderInfosMap := make(map[uint]*entity.NewTraderInfo, 0)
+	for _, vTraderInfos := range traderInfos {
+		traderInfosMap[vTraderInfos.TraderId] = vTraderInfos
+	}
+
 	wg := sync.WaitGroup{}
 	// 遍历跟单者
 	for _, vUserBindTraders := range userBindTraders {
@@ -1042,6 +1067,17 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 
 			// 本次 代单员币的数量 * (用户保证金/代单员保证金)
 			tmpQty = tmpInsertData.PositionAmount.(float64) * float64(tmpUserBindTraders.Amount) / tmpTrader.BaseMoney // 本次开单数量
+
+			// todo 目前是松柏系列账户
+			if _, ok := userInfosMap[tmpUserBindTraders.UserId]; ok {
+				if _, ok2 := traderInfosMap[tmpUserBindTraders.TraderId]; ok2 {
+					if 0 < traderInfosMap[tmpUserBindTraders.TraderId].BaseMoney && 0 < userInfosMap[tmpUserBindTraders.UserId].BaseMoney {
+						tmpQty = tmpInsertData.PositionAmount.(float64) * userInfosMap[tmpUserBindTraders.UserId].BaseMoney / traderInfosMap[tmpUserBindTraders.TraderId].BaseMoney // 本次开单数量
+					} else {
+						fmt.Println("新，无效信息base_money1，信息", traderInfosMap[tmpUserBindTraders.TraderId], userInfosMap[tmpUserBindTraders.UserId])
+					}
+				}
+			}
 
 			// 精度调整
 			if 0 >= symbolsMap[tmpInsertData.Symbol.(string)].QuantityPrecision {
@@ -1287,6 +1323,16 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 
 				// 本次减去上一次
 				tmpQty = (tmpUpdateData.PositionAmount.(float64) - lastPositionData.PositionAmount) * float64(tmpUserBindTraders.Amount) / tmpTrader.BaseMoney // 本次开单数量
+				if _, ok := userInfosMap[tmpUserBindTraders.UserId]; ok {
+					if _, ok2 := traderInfosMap[tmpUserBindTraders.TraderId]; ok2 {
+						if 0 < traderInfosMap[tmpUserBindTraders.TraderId].BaseMoney && 0 < userInfosMap[tmpUserBindTraders.UserId].BaseMoney {
+							tmpQty = (tmpUpdateData.PositionAmount.(float64) - lastPositionData.PositionAmount) * userInfosMap[tmpUserBindTraders.UserId].BaseMoney / traderInfosMap[tmpUserBindTraders.TraderId].BaseMoney // 本次开单数量
+						} else {
+							fmt.Println("新，无效信息base_money2，信息", traderInfosMap[tmpUserBindTraders.TraderId], userInfosMap[tmpUserBindTraders.UserId])
+						}
+					}
+				}
+
 			} else if lessThanOrEqualZero(tmpUpdateData.PositionAmount.(float64), lastPositionData.PositionAmount, 1e-7) {
 				fmt.Println("新，部分平仓：", tmpUpdateData, lastPositionData)
 				// 部分平仓
