@@ -1601,9 +1601,9 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			// 龟兔的数据
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 
+			fmt.Println(1)
 			// 需要重试
 			if retry {
-				fmt.Println("错误了")
 				retryTimes++
 				time.Sleep(time.Millisecond * 200)
 				continue
@@ -1633,6 +1633,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				zyTraderCookie[0].IsOpen = 0
 				_, err = tx.Ctx(ctx).Update("zy_trader_cookie", zyTraderCookie[0], "id", zyTraderCookie[0].Id)
 				if nil != err {
+					fmt.Println("龟兔，cookie错误，信息", traderNum, reqResData)
 					return err
 				}
 
@@ -2014,7 +2015,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 						fmt.Println(err)
 					}
 
-					fmt.Println("下单数据：", binanceOrderRes, orderInfoRes)
 					// 下单异常
 					if 0 >= binanceOrderRes.OrderId {
 						orderErr.Add(&entity.NewUserOrderErrTwo{
