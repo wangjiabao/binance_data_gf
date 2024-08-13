@@ -2331,6 +2331,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 		// 回收协程
 		wg.Wait()
+
+		fmt.Printf("程序执行完毕，开始 %v, 拉取时长: %v, 总计时长: %v", start, timePull, time.Since(start))
 	}
 }
 
