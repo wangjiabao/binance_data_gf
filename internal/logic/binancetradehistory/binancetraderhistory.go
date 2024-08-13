@@ -2011,7 +2011,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					binanceOrderRes, orderInfoRes, err = requestBinanceOrder(tmpInsertData.Symbol.(string), side, orderType, positionSide, quantity, tmpUsers.ApiKey, tmpUsers.ApiSecret)
 					if nil != err {
 						fmt.Println(err)
-						return
 					}
 
 					// 下单异常
@@ -2061,6 +2060,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				if nil != err {
 					fmt.Println("龟兔，添加下单任务异常，新增仓位，错误信息：", err, traderNum, vInsertData, tmpUserBindTraders)
 				}
+
+				return
 			}
 
 			// 修改仓位
@@ -2192,8 +2193,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					continue
 				}
 
-				fmt.Println("龟兔，本次下单数字，信息:", quantity, quantityFloat)
-
 				wg.Add(1)
 				err = s.pool.Add(ctx, func(ctx context.Context) {
 					defer wg.Done()
@@ -2308,6 +2307,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 						}
 					}
 
+					return
 				})
 				if nil != err {
 					fmt.Println("新，添加下单任务异常，修改仓位，错误信息：", err, traderNum, vUpdateData, tmpUserBindTraders)
