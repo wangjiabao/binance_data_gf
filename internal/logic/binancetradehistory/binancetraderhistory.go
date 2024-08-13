@@ -2289,7 +2289,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 							} else if "SELL" == side {
-								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
+								tmpExecutedQty = orderMap.Get(tmpUpdateData.Symbol.(string)+positionSide+strUserId).(float64) - tmpExecutedQty
 								if lessThanOrEqualZero(tmpExecutedQty, 0, 1e-7) {
 									tmpExecutedQty = 0
 								}
@@ -2303,7 +2303,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 							} else if "BUY" == side {
-								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
+								tmpExecutedQty = orderMap.Get(tmpUpdateData.Symbol.(string)+positionSide+strUserId).(float64) - tmpExecutedQty
 								if lessThanOrEqualZero(tmpExecutedQty, 0, 1e-7) {
 									tmpExecutedQty = 0
 								}
