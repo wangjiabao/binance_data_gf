@@ -18,5 +18,10 @@ func main() {
 		panic(err)
 	}
 
+	err = cmd.Main.AddCommand(cmd.TraderGui)
+	if err != nil {
+		panic(err)
+	}
+
 	cmd.Main.Run(gctx.GetInitCtx())
 }

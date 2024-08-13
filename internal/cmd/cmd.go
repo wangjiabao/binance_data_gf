@@ -51,6 +51,22 @@ var (
 			select {}
 		},
 	}
+
+	// TraderGui 监听系统中指定的交易员-龟兔赛跑
+	TraderGui = &gcmd.Command{
+		Name:  "trader",
+		Brief: "listen trader",
+		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
+			serviceBinanceTrader := service.BinanceTraderHistory()
+			// 任务1 同步订单
+			go func() {
+				serviceBinanceTrader.PullAndOrderNewGuiTu(ctx)
+			}()
+
+			// 阻塞
+			select {}
+		},
+	}
 )
 
 // 全局变量来跟踪定时任务
