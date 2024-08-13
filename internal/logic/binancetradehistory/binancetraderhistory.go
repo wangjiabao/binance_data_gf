@@ -1604,7 +1604,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			// 龟兔的数据
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 			num1++
-			fmt.Println(1)
 			if 0 == num1%200 {
 				fmt.Println(num1)
 				if 1 < len(reqResData) {
