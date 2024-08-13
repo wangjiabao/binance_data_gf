@@ -1560,7 +1560,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	// 执行
 	num1 := 0
 	for {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 		start := time.Now()
 
 		// 重新初始化数据
