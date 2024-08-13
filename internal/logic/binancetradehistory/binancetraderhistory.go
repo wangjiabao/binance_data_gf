@@ -1604,7 +1604,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 			num1++
 
-			if 0 == num1%10000 {
+			if 0 == num1%1000 {
 				fmt.Println(1)
 				if 1 < len(reqResData) {
 					fmt.Println(reqResData[1])
