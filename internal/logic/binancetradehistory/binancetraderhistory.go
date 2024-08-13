@@ -1556,8 +1556,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	})
 	// 初始化仓位
 	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
+
 	// 执行
-	num := 0
 	for {
 		start := time.Now()
 
@@ -1601,14 +1601,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		for retryTimes < retryTimesLimit { // 最大重试
 			// 龟兔的数据
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
-
-			num++
-			if 0 == num/1000 {
-				fmt.Println(1)
-				if 1 < len(reqResData) {
-					fmt.Println(reqResData[0])
-				}
-			}
 
 			// 需要重试
 			if retry {
@@ -2299,7 +2291,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 						} else if "SHORT" == positionSide {
 							if "SELL" == side {
 								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
-								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
+								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 							} else if "BUY" == side {
 								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								if lessThanOrEqualZero(tmpExecutedQty, 0, 1e-7) {
