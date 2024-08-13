@@ -1558,9 +1558,9 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
 
 	// 执行
-	num1 := 0
+	//num1 := 0
 	for {
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 		start := time.Now()
 
 		// 重新初始化数据
@@ -1603,18 +1603,18 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		for retryTimes < retryTimesLimit { // 最大重试
 			// 龟兔的数据
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
-			num1++
-			if 0 == num1%200 {
-				fmt.Println(num1)
-				if 1 < len(reqResData) {
-					fmt.Println(reqResData[1])
-				}
-			}
+			//num1++
+			//if 0 == num1%200 {
+			//	fmt.Println(num1)
+			//	if 1 < len(reqResData) {
+			//		fmt.Println(reqResData[1])
+			//	}
+			//}
 
 			// 需要重试
 			if retry {
 				retryTimes++
-				time.Sleep(time.Millisecond * 200)
+				time.Sleep(time.Second * 5)
 				fmt.Println("龟兔，重试：", retry)
 				continue
 			}
