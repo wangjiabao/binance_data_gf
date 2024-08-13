@@ -1899,6 +1899,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		// 遍历跟单者
 		for _, vUserBindTraders := range userBindTraders {
 			tmpUserBindTraders := vUserBindTraders
+			strUserId := strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10)
+
 			if _, ok := usersMap[tmpUserBindTraders.UserId]; !ok {
 				fmt.Println("龟兔，未匹配到用户信息，用户的信息无效了，信息", traderNum, tmpUserBindTraders)
 				continue
@@ -2047,11 +2049,11 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 					// 不存在新增，这里只能是开仓
-					if !orderMap.Contains(tmpInsertData.Symbol.(string) + positionSide) {
-						orderMap.Set(tmpInsertData.Symbol.(string)+positionSide, tmpExecutedQty)
+					if !orderMap.Contains(tmpInsertData.Symbol.(string) + positionSide + strUserId) {
+						orderMap.Set(tmpInsertData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 					} else {
-						tmpExecutedQty += orderMap.Get(tmpInsertData.Symbol.(string) + positionSide).(float64)
-						orderMap.Set(tmpInsertData.Symbol.(string)+positionSide, tmpExecutedQty)
+						tmpExecutedQty += orderMap.Get(tmpInsertData.Symbol.(string) + positionSide + strUserId).(float64)
+						orderMap.Set(tmpInsertData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 					}
 
 					return
@@ -2060,11 +2062,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				if nil != err {
 					fmt.Println("龟兔，添加下单任务异常，新增仓位，错误信息：", err, traderNum, vInsertData, tmpUserBindTraders)
 				}
-			}
-
-			// 判断需要修改仓位
-			if 0 >= len(orderUpdateData) {
-				continue
 			}
 
 			// 修改仓位
@@ -2105,17 +2102,17 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 					// 未开启过仓位
-					if !orderMap.Contains(tmpUpdateData.Symbol.(string) + tmpUpdateData.PositionSide.(string)) {
+					if !orderMap.Contains(tmpUpdateData.Symbol.(string) + tmpUpdateData.PositionSide.(string) + strUserId) {
 						continue
 					}
 
 					// 认为是0
-					if lessThanOrEqualZero(orderMap.Get(tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)).(float64), 0, 1e-7) {
+					if lessThanOrEqualZero(orderMap.Get(tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)+strUserId).(float64), 0, 1e-7) {
 						continue
 					}
 
 					// 剩余仓位
-					tmpQty = orderMap.Get(tmpUpdateData.Symbol.(string) + tmpUpdateData.PositionSide.(string)).(float64)
+					tmpQty = orderMap.Get(tmpUpdateData.Symbol.(string) + tmpUpdateData.PositionSide.(string) + strUserId).(float64)
 				} else if lessThanOrEqualZero(lastPositionData.PositionAmount, tmpUpdateData.PositionAmount.(float64), 1e-7) {
 					fmt.Println("龟兔，追加仓位：", tmpUpdateData, lastPositionData)
 					// 本次加仓 代单员币的数量 * (用户保证金/代单员保证金)
@@ -2157,12 +2154,12 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 					// 未开启过仓位
-					if !orderMap.Contains(tmpUpdateData.Symbol.(string) + tmpUpdateData.PositionSide.(string)) {
+					if !orderMap.Contains(tmpUpdateData.Symbol.(string) + tmpUpdateData.PositionSide.(string) + strUserId) {
 						continue
 					}
 
 					// 认为是0
-					if lessThanOrEqualZero(orderMap.Get(tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)).(float64), 0, 1e-7) {
+					if lessThanOrEqualZero(orderMap.Get(tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)+strUserId).(float64), 0, 1e-7) {
 						continue
 					}
 
@@ -2173,7 +2170,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 					// 按百分比
-					tmpQty = orderMap.Get(tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)).(float64) * (lastPositionData.PositionAmount - tmpUpdateData.PositionAmount.(float64)) / lastPositionData.PositionAmount
+					tmpQty = orderMap.Get(tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)+strUserId).(float64) * (lastPositionData.PositionAmount - tmpUpdateData.PositionAmount.(float64)) / lastPositionData.PositionAmount
 				} else {
 					fmt.Println("龟兔，分析仓位无效，信息", lastPositionData, tmpUpdateData)
 					continue
@@ -2267,12 +2264,12 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 					// 不存在新增，这里只能是开仓
-					if !orderMap.Contains(tmpUpdateData.Symbol.(string) + positionSide) {
+					if !orderMap.Contains(tmpUpdateData.Symbol.(string) + positionSide + strUserId) {
 						// 追加仓位，开仓
 						if "LONG" == positionSide && "BUY" == side {
-							orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
+							orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 						} else if "SHORT" == positionSide && "SELL" == side {
-							orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
+							orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 						} else {
 							fmt.Println("龟兔，未知仓位信息，信息", tmpUpdateData, tmpExecutedQty)
 						}
@@ -2281,14 +2278,14 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 						// 追加仓位，开仓
 						if "LONG" == positionSide {
 							if "BUY" == side {
-								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide).(float64)
-								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
+								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
+								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 							} else if "SELL" == side {
-								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide).(float64)
+								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								if lessThanOrEqualZero(tmpExecutedQty, 0, 1e-7) {
 									tmpExecutedQty = 0
 								}
-								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
+								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 							} else {
 								fmt.Println("龟兔，未知仓位信息，信息", tmpUpdateData, tmpExecutedQty)
 							}
@@ -2296,14 +2293,14 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 						} else if "SHORT" == positionSide {
 
 							if "SELL" == side {
-								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide).(float64)
+								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
 							} else if "BUY" == side {
-								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide).(float64)
+								tmpExecutedQty -= orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								if lessThanOrEqualZero(tmpExecutedQty, 0, 1e-7) {
 									tmpExecutedQty = 0
 								}
-								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
+								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide+strUserId, tmpExecutedQty)
 							} else {
 								fmt.Println("龟兔，未知仓位信息，信息", tmpUpdateData, tmpExecutedQty)
 							}
@@ -2322,11 +2319,12 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 			// 遍历map
 			orderMap.Iterator(func(k interface{}, v interface{}) bool {
-				fmt.Printf("测试结果：%v:%v ", k, v)
+				fmt.Println("测试结果:", k, v)
 				return true
 			})
+
 			orderErr.Iterator(func(v interface{}) bool {
-				fmt.Println("测试结果，错误单：", v)
+				fmt.Println("测试结果，错误单:", v)
 				return true
 			})
 		}
