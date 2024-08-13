@@ -1601,7 +1601,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			// 龟兔的数据
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 
-			fmt.Println(1)
 			// 需要重试
 			if retry {
 				retryTimes++
