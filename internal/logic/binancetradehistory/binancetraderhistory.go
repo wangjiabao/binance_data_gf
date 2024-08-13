@@ -1605,8 +1605,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 			num1++
 			fmt.Println(1)
-			if 0 == num1%10 {
-				fmt.Println(1)
+			if 0 == num1%200 {
+				fmt.Println(num1)
 				if 1 < len(reqResData) {
 					fmt.Println(reqResData[1])
 				}
@@ -1616,6 +1616,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			if retry {
 				retryTimes++
 				time.Sleep(time.Millisecond * 200)
+				fmt.Println("龟兔，重试：", retry)
 				continue
 			}
 
