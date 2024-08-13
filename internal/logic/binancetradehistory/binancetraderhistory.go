@@ -1859,7 +1859,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			}
 		}
 
-		fmt.Printf("程序拉取部分，开始 %v, 拉取时长: %v, 统计更新时长: %v", start, timePull, time.Since(start))
+		fmt.Printf("龟兔，程序拉取部分，开始 %v, 拉取时长: %v, 统计更新时长: %v", start, timePull, time.Since(start))
 
 		// 下单
 		// 必须信息 初始化跟单人信息
@@ -2013,6 +2013,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 						fmt.Println(err)
 					}
 
+					fmt.Println("下单数据：", binanceOrderRes, orderInfoRes)
 					// 下单异常
 					if 0 >= binanceOrderRes.OrderId {
 						orderErr.Add(&entity.NewUserOrderErrTwo{
@@ -2318,17 +2319,18 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		// 回收协程
 		wg.Wait()
 
+		fmt.Printf("龟兔，程序执行完毕，开始 %v, 拉取时长: %v, 总计时长: %v", start, timePull, time.Since(start))
+
 		// 遍历map
 		orderMap.Iterator(func(k interface{}, v interface{}) bool {
-			fmt.Println("测试结果:", k, v)
+			fmt.Println("龟兔，测试结果:", k, v)
 			return true
 		})
 
 		orderErr.Iterator(func(v interface{}) bool {
-			fmt.Println("测试结果，错误单:", v)
+			fmt.Println("龟兔，测试结果，错误单:", v)
 			return true
 		})
-		fmt.Printf("程序执行完毕，开始 %v, 拉取时长: %v, 总计时长: %v", start, timePull, time.Since(start))
 	}
 }
 
