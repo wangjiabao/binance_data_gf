@@ -2058,7 +2058,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 					return
 				})
-
 				if nil != err {
 					fmt.Println("龟兔，添加下单任务异常，新增仓位，错误信息：", err, traderNum, vInsertData, tmpUserBindTraders)
 				}
@@ -2186,14 +2185,14 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				quantityFloat, err = strconv.ParseFloat(quantity, 64)
 				if nil != err {
 					fmt.Println(err)
-					return
+					continue
 				}
 
 				if lessThanOrEqualZero(quantityFloat, 0, 1e-7) {
 					continue
 				}
 
-				fmt.Println("龟兔，下单数字，信息:", quantity, quantityFloat)
+				fmt.Println("龟兔，本次下单数字，信息:", quantity, quantityFloat)
 
 				wg.Add(1)
 				err = s.pool.Add(ctx, func(ctx context.Context) {
@@ -2291,7 +2290,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 							}
 
 						} else if "SHORT" == positionSide {
-
 							if "SELL" == side {
 								tmpExecutedQty += orderMap.Get(tmpUpdateData.Symbol.(string) + positionSide + strUserId).(float64)
 								orderMap.Set(tmpUpdateData.Symbol.(string)+positionSide, tmpExecutedQty)
@@ -2311,27 +2309,25 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 				})
-
 				if nil != err {
 					fmt.Println("新，添加下单任务异常，修改仓位，错误信息：", err, traderNum, vUpdateData, tmpUserBindTraders)
 				}
 			}
-
-			// 遍历map
-			orderMap.Iterator(func(k interface{}, v interface{}) bool {
-				fmt.Println("测试结果:", k, v)
-				return true
-			})
-
-			orderErr.Iterator(func(v interface{}) bool {
-				fmt.Println("测试结果，错误单:", v)
-				return true
-			})
 		}
 
 		// 回收协程
 		wg.Wait()
 
+		// 遍历map
+		orderMap.Iterator(func(k interface{}, v interface{}) bool {
+			fmt.Println("测试结果:", k, v)
+			return true
+		})
+
+		orderErr.Iterator(func(v interface{}) bool {
+			fmt.Println("测试结果，错误单:", v)
+			return true
+		})
 		fmt.Printf("程序执行完毕，开始 %v, 拉取时长: %v, 总计时长: %v", start, timePull, time.Since(start))
 	}
 }
