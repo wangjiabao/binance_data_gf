@@ -2061,8 +2061,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				if nil != err {
 					fmt.Println("龟兔，添加下单任务异常，新增仓位，错误信息：", err, traderNum, vInsertData, tmpUserBindTraders)
 				}
-
-				return
 			}
 
 			// 修改仓位
