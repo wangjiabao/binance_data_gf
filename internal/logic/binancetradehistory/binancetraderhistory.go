@@ -1603,6 +1603,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 			// 需要重试
 			if retry {
+				fmt.Println("错误了")
 				retryTimes++
 				time.Sleep(time.Millisecond * 200)
 				continue
