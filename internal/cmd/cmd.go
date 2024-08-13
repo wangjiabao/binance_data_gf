@@ -54,7 +54,7 @@ var (
 
 	// TraderGui 监听系统中指定的交易员-龟兔赛跑
 	TraderGui = &gcmd.Command{
-		Name:  "trader",
+		Name:  "traderGui",
 		Brief: "listen trader",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
 			serviceBinanceTrader := service.BinanceTraderHistory()
