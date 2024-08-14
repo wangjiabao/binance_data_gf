@@ -58,6 +58,13 @@ var (
 		Brief: "listen trader",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
 			serviceBinanceTrader := service.BinanceTraderHistory()
+
+			// 每秒1次，拉取保证金
+			handle := func(ctx context.Context) {
+				serviceBinanceTrader.PullAndSetBaseMoneyNewGuiTuAndUser(ctx)
+			}
+			gtimer.AddSingleton(ctx, time.Second*3, handle)
+
 			// 任务1 同步订单
 			go func() {
 				serviceBinanceTrader.PullAndOrderNewGuiTu(ctx)

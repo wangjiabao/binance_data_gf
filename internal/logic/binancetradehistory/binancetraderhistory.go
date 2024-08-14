@@ -14,6 +14,7 @@ import (
 	"github.com/gogf/gf/v2/container/gmap"
 	"github.com/gogf/gf/v2/container/gqueue"
 	"github.com/gogf/gf/v2/container/gset"
+	"github.com/gogf/gf/v2/container/gtype"
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/grpool"
@@ -1512,6 +1513,58 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 	return nil
 }
 
+var (
+	baseMoneyGuiTu = gtype.NewFloat64()
+	baseMoneyUser  = gtype.NewFloat64()
+)
+
+// PullAndSetBaseMoneyNewGuiTuAndUser 拉取binance保证金数据
+func (s *sBinanceTraderHistory) PullAndSetBaseMoneyNewGuiTuAndUser(ctx context.Context) {
+	var (
+		err error
+	)
+
+	var (
+		one string
+	)
+	one, err = requestBinanceTraderDetail(3887627985594221568)
+	if nil != err {
+		fmt.Println("龟兔，拉取保证金失败：", err, 3887627985594221568)
+	}
+	if 0 < len(one) {
+		var tmp float64
+		tmp, err = strconv.ParseFloat(one, 64)
+		if nil != err {
+			fmt.Println("龟兔，拉取保证金，转化失败：", err, 3887627985594221568)
+		}
+
+		if !IsEqual(tmp, baseMoneyGuiTu.Val()) {
+			fmt.Println("变更")
+			baseMoneyGuiTu.Set(tmp)
+		}
+	}
+
+	var (
+		two string
+	)
+	two, err = requestBinanceTraderDetail(4121564701476783104)
+	if nil != err {
+		fmt.Println("龟兔，拉取保证金失败：", err, 4121564701476783104)
+	}
+	if 0 < len(two) {
+		var tmpTwo float64
+		tmpTwo, err = strconv.ParseFloat(two, 64)
+		if nil != err {
+			fmt.Println("龟兔，拉取保证金，转化失败：", err, 4121564701476783104)
+		}
+
+		if !IsEqual(tmpTwo, baseMoneyUser.Val()) {
+			fmt.Println("变更")
+			baseMoneyUser.Set(tmpTwo)
+		}
+	}
+}
+
 // PullAndOrderNewGuiTu 拉取binance数据，仓位，根据cookie 龟兔赛跑
 func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	var (
@@ -1522,7 +1575,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		reqResData                []*binancePositionDataList
 		cookie                    = "no"
 		token                     = "no"
-		traderNum                 = uint64(4037244644304291841) // 龟兔
+		traderNum                 = uint64(3887627985594221568) // 龟兔
 		err                       error
 	)
 
@@ -1545,15 +1598,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	orderMap := gmap.New(true)
 	orderErr := gset.New(true)
 
-	// 初始化带单员龟兔
-	trader = make([]*entity.Trader, 0)
-	trader = append(trader, &entity.Trader{
-		Id:          1,
-		Name:        "龟兔",
-		PortfolioId: "4037244644304291841",
-		IsOpen:      1,
-		BaseMoney:   300000,
-	})
 	// 初始化仓位
 	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
 
@@ -1610,6 +1654,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				if 1 < len(reqResData) {
 					fmt.Println(reqResData[1])
 				}
+				fmt.Println(baseMoneyGuiTu.Val(), baseMoneyUser.Val())
 			}
 
 			// 需要重试
@@ -1875,6 +1920,17 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		fmt.Printf("龟兔，程序拉取部分，开始 %v, 拉取时长: %v, 统计更新时长: %v\n", start, timePull, time.Since(start))
 
 		continue
+
+		// 初始化带单员龟兔
+		trader = make([]*entity.Trader, 0)
+		trader = append(trader, &entity.Trader{
+			Id:          1,
+			Name:        "龟兔",
+			PortfolioId: "3887627985594221568",
+			IsOpen:      1,
+			BaseMoney:   baseMoneyGuiTu.Val(),
+		})
+
 		// 下单
 		// 必须信息 初始化跟单人信息
 		userBindTraders := make([]*entity.NewUserBindTraderTwo, 0)
@@ -3358,4 +3414,56 @@ func requestBinanceOrder(symbol string, side string, orderType string, positionS
 	}
 
 	return res, resOrderInfo, nil
+}
+
+type BinanceTraderDetailResp struct {
+	Data *BinanceTraderDetailData
+}
+
+type BinanceTraderDetailData struct {
+	MarginBalance string
+}
+
+// 拉取交易员交易历史
+func requestBinanceTraderDetail(portfolioId uint64) (string, error) {
+	var (
+		resp   *http.Response
+		res    string
+		b      []byte
+		err    error
+		apiUrl = "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/detail?portfolioId=" + strconv.FormatUint(portfolioId, 10)
+	)
+
+	// 构造请求
+	resp, err = http.Get(apiUrl)
+	if err != nil {
+		return res, err
+	}
+
+	// 结果
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return res, err
+	}
+
+	var l *BinanceTraderDetailResp
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		fmt.Println(err)
+		return res, err
+	}
+
+	if nil == l.Data {
+		return res, nil
+	}
+
+	return l.Data.MarginBalance, nil
 }
