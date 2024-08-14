@@ -1558,7 +1558,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
 
 	// 执行
-	//num1 := 0
+	num1 := 0
 	for {
 		//time.Sleep(30 * time.Millisecond)
 		start := time.Now()
@@ -1604,13 +1604,13 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			// 龟兔的数据
 			//reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 			reqResData, retry, err = s.requestProxyBinancePositionHistoryNew("http://43.130.227.135:888/", traderNum, cookie, token)
-			//num1++
-			//if 0 == num1%200 {
-			//	fmt.Println(num1)
-			//	if 1 < len(reqResData) {
-			//		fmt.Println(reqResData[1])
-			//	}
-			//}
+			num1++
+			if 0 == num1%200 {
+				fmt.Println(time.Now())
+				if 1 < len(reqResData) {
+					fmt.Println(reqResData[1])
+				}
+			}
 
 			// 需要重试
 			if retry {
