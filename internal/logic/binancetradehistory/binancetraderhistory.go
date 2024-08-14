@@ -1919,8 +1919,6 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 		fmt.Printf("龟兔，程序拉取部分，开始 %v, 拉取时长: %v, 统计更新时长: %v\n", start, timePull, time.Since(start))
 
-		continue
-
 		// 初始化带单员龟兔
 		trader = make([]*entity.Trader, 0)
 		trader = append(trader, &entity.Trader{
@@ -1969,6 +1967,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		// 遍历跟单者
 		for _, vUserBindTraders := range userBindTraders {
 			tmpUserBindTraders := vUserBindTraders
+			tmpUserBindTradersAmount := baseMoneyUser.Val() // 用户保证金
+
 			strUserId := strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10)
 
 			if _, ok := usersMap[tmpUserBindTraders.UserId]; !ok {
@@ -2021,7 +2021,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 				}
 
 				// 本次 代单员币的数量 * (用户保证金/代单员保证金)
-				tmpQty = tmpInsertData.PositionAmount.(float64) * float64(tmpUserBindTraders.Amount) / tmpTrader.BaseMoney // 本次开单数量
+				tmpQty = tmpInsertData.PositionAmount.(float64) * tmpUserBindTradersAmount / tmpTrader.BaseMoney // 本次开单数量
 
 				// todo 目前是松柏系列账户
 				if _, ok := userInfosMap[tmpUserBindTraders.UserId]; ok {
@@ -2196,7 +2196,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 					}
 
 					// 本次减去上一次
-					tmpQty = (tmpUpdateData.PositionAmount.(float64) - lastPositionData.PositionAmount) * float64(tmpUserBindTraders.Amount) / tmpTrader.BaseMoney // 本次开单数量
+					tmpQty = (tmpUpdateData.PositionAmount.(float64) - lastPositionData.PositionAmount) * tmpUserBindTradersAmount / tmpTrader.BaseMoney // 本次开单数量
 					if _, ok := userInfosMap[tmpUserBindTraders.UserId]; ok {
 						if _, ok2 := traderInfosMap[tmpUserBindTraders.TraderId]; ok2 {
 							if 0 < traderInfosMap[tmpUserBindTraders.TraderId].BaseMoney && 0 < userInfosMap[tmpUserBindTraders.UserId].BaseMoney {
