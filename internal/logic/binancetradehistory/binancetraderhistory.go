@@ -1602,7 +1602,8 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 		for retryTimes < retryTimesLimit { // 最大重试
 			// 龟兔的数据
-			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
+			//reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
+			reqResData, retry, err = s.requestProxyBinancePositionHistoryNew("http://43.130.227.135:888/", traderNum, cookie, token)
 			//num1++
 			//if 0 == num1%200 {
 			//	fmt.Println(num1)
@@ -1873,6 +1874,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 		fmt.Printf("龟兔，程序拉取部分，开始 %v, 拉取时长: %v, 统计更新时长: %v\n", start, timePull, time.Since(start))
 
+		continue
 		// 下单
 		// 必须信息 初始化跟单人信息
 		userBindTraders := make([]*entity.NewUserBindTraderTwo, 0)
@@ -3023,25 +3025,28 @@ func (s *sBinanceTraderHistory) requestProxyBinancePositionHistoryNew(proxyAddr 
 		ResponseHeaderTimeout: time.Second * time.Duration(5),
 	}
 	httpClient := &http.Client{
-		Timeout:   time.Second * 10,
+		Timeout:   time.Second * 2,
 		Transport: netTransport,
 	}
 
 	// 构造请求
 	req, err := http.NewRequest("GET", apiUrl, nil)
 	if err != nil {
+		fmt.Println("Error creating request:", err)
 		fmt.Println(444444, err)
 		return nil, true, err
 	}
 
 	// 添加头信息
 	req.Header.Set("Clienttype", "web")
-	req.Header.Set("Csrftoken", token)
 	req.Header.Set("Cookie", cookie)
+	req.Header.Set("Csrftoken", token)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0")
 
 	// 构造请求
 	resp, err = httpClient.Do(req)
 	if err != nil {
+		fmt.Println("Error making request:", err)
 		fmt.Println(444444, err)
 		return nil, true, err
 	}
