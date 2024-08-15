@@ -1514,8 +1514,10 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 }
 
 var (
-	baseMoneyGuiTu = gtype.NewFloat64()
-	baseMoneyUser  = gtype.NewFloat64()
+	baseMoneyGuiTu     = gtype.NewFloat64()
+	baseMoneyUser      = gtype.NewFloat64()
+	baseMoneyUserTwo   = gtype.NewFloat64()
+	baseMoneyUserThree = gtype.NewFloat64()
 )
 
 // PullAndSetBaseMoneyNewGuiTuAndUser 拉取binance保证金数据
@@ -1539,7 +1541,7 @@ func (s *sBinanceTraderHistory) PullAndSetBaseMoneyNewGuiTuAndUser(ctx context.C
 		}
 
 		if !IsEqual(tmp, baseMoneyGuiTu.Val()) {
-			fmt.Println("变更")
+			fmt.Println("变更1")
 			baseMoneyGuiTu.Set(tmp)
 		}
 	}
@@ -1559,8 +1561,48 @@ func (s *sBinanceTraderHistory) PullAndSetBaseMoneyNewGuiTuAndUser(ctx context.C
 		}
 
 		if !IsEqual(tmpTwo, baseMoneyUser.Val()) {
-			fmt.Println("变更")
+			fmt.Println("变更2")
 			baseMoneyUser.Set(tmpTwo)
+		}
+	}
+
+	var (
+		three string
+	)
+	three, err = requestBinanceTraderDetail(4112462798860993793)
+	if nil != err {
+		fmt.Println("龟兔，拉取保证金失败：", err, 4112462798860993793)
+	}
+	if 0 < len(three) {
+		var tmpThree float64
+		tmpThree, err = strconv.ParseFloat(three, 64)
+		if nil != err {
+			fmt.Println("龟兔，拉取保证金，转化失败：", err, 4112462798860993793)
+		}
+
+		if !IsEqual(tmpThree, baseMoneyUserTwo.Val()) {
+			fmt.Println("变更3")
+			baseMoneyUserTwo.Set(tmpThree)
+		}
+	}
+
+	var (
+		four string
+	)
+	four, err = requestBinanceTraderDetail(4112477529910829056)
+	if nil != err {
+		fmt.Println("龟兔，拉取保证金失败：", err, 4112477529910829056)
+	}
+	if 0 < len(four) {
+		var tmpFour float64
+		tmpFour, err = strconv.ParseFloat(four, 64)
+		if nil != err {
+			fmt.Println("龟兔，拉取保证金，转化失败：", err, 4112477529910829056)
+		}
+
+		if !IsEqual(tmpFour, baseMoneyUserThree.Val()) {
+			fmt.Println("变更4")
+			baseMoneyUserThree.Set(tmpFour)
 		}
 	}
 }
@@ -1602,7 +1644,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 	binancePositionMap = make(map[string]*entity.TraderPosition, 0)
 
 	// 执行
-	num1 := 0
+	//num1 := 0
 	for {
 		time.Sleep(28 * time.Millisecond)
 		start := time.Now()
@@ -1648,14 +1690,14 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			// 龟兔的数据
 			reqResData, retry, err = s.requestBinancePositionHistoryNew(traderNum, cookie, token)
 			//reqResData, retry, err = s.requestProxyBinancePositionHistoryNew("http://43.130.227.135:888/", traderNum, cookie, token)
-			num1++
-			if 0 == num1%200 {
-				fmt.Println(time.Now())
-				if 1 < len(reqResData) {
-					fmt.Println(reqResData[1])
-				}
-				fmt.Println(baseMoneyGuiTu.Val(), baseMoneyUser.Val())
-			}
+			//num1++
+			//if 0 == num1%200 {
+			//	fmt.Println(time.Now())
+			//	if 1 < len(reqResData) {
+			//		fmt.Println(reqResData[1])
+			//	}
+			//	fmt.Println(baseMoneyGuiTu.Val(), baseMoneyUser.Val())
+			//}
 
 			// 需要重试
 			if retry {
@@ -1939,12 +1981,44 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 			Amount:    20000,
 			Status:    0,
 			InitOrder: 1,
+		}, &entity.NewUserBindTraderTwo{
+			Id:        2,
+			UserId:    2,
+			TraderId:  1,
+			Amount:    20000,
+			Status:    0,
+			InitOrder: 1,
+		}, &entity.NewUserBindTraderTwo{
+			Id:        3,
+			UserId:    3,
+			TraderId:  1,
+			Amount:    20000,
+			Status:    0,
+			InitOrder: 1,
 		})
 
 		users := make([]*entity.NewUser, 0)
 		users = append(users, &entity.NewUser{
 			Id:                  1,
 			Address:             "跟龟兔",
+			ApiStatus:           1,
+			ApiKey:              "",
+			ApiSecret:           "",
+			BindTraderStatusTfi: 1,
+			UseNewSystem:        2,
+			IsDai:               1,
+		}, &entity.NewUser{
+			Id:                  2,
+			Address:             "跟龟兔2",
+			ApiStatus:           1,
+			ApiKey:              "",
+			ApiSecret:           "",
+			BindTraderStatusTfi: 1,
+			UseNewSystem:        2,
+			IsDai:               1,
+		}, &entity.NewUser{
+			Id:                  3,
+			Address:             "跟龟兔3",
 			ApiStatus:           1,
 			ApiKey:              "",
 			ApiSecret:           "",
@@ -1967,7 +2041,20 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 		// 遍历跟单者
 		for _, vUserBindTraders := range userBindTraders {
 			tmpUserBindTraders := vUserBindTraders
-			tmpUserBindTradersAmount := baseMoneyUser.Val() // 用户保证金
+			var tmpUserBindTradersAmount float64
+
+			if 1 == vUserBindTraders.UserId {
+				tmpUserBindTradersAmount = baseMoneyUser.Val() // 用户保证金
+			} else if 2 == vUserBindTraders.UserId {
+				tmpUserBindTradersAmount = baseMoneyUserTwo.Val() // 用户保证金
+			} else if 3 == vUserBindTraders.UserId {
+				tmpUserBindTradersAmount = baseMoneyUserThree.Val() // 用户保证金
+			}
+
+			if lessThanOrEqualZero(tmpUserBindTradersAmount, 0, 1e-7) {
+				fmt.Println("保证金不足为0：", tmpUserBindTradersAmount, vUserBindTraders)
+				continue
+			}
 
 			strUserId := strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10)
 
@@ -2388,16 +2475,16 @@ func (s *sBinanceTraderHistory) PullAndOrderNewGuiTu(ctx context.Context) {
 
 		fmt.Printf("龟兔，程序执行完毕，开始 %v, 拉取时长: %v, 总计时长: %v\n", start, timePull, time.Since(start))
 
-		// 遍历map
-		orderMap.Iterator(func(k interface{}, v interface{}) bool {
-			fmt.Println("龟兔，测试结果:", k, v)
-			return true
-		})
-
-		orderErr.Iterator(func(v interface{}) bool {
-			fmt.Println("龟兔，测试结果，错误单:", v)
-			return true
-		})
+		//// 遍历map
+		//orderMap.Iterator(func(k interface{}, v interface{}) bool {
+		//	fmt.Println("龟兔，测试结果:", k, v)
+		//	return true
+		//})
+		//
+		//orderErr.Iterator(func(v interface{}) bool {
+		//	fmt.Println("龟兔，测试结果，错误单:", v)
+		//	return true
+		//})
 	}
 }
 
