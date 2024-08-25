@@ -25,9 +25,10 @@ type NewUserBindTraderTwoColumns struct {
 	TraderId  string // 交易员id
 	Amount    string //
 	Status    string // 可用0，不可用1，待更换2
-	InitOrder string // 绑定是否初始化仓位
+	InitOrder string // 绑后是否初始化仓位
 	CreatedAt string // 创建时间
 	UpdatedAt string // 更新时间
+	Num       string //
 }
 
 // newUserBindTraderTwoColumns holds the columns for table new_user_bind_trader_two.
@@ -40,6 +41,7 @@ var newUserBindTraderTwoColumns = NewUserBindTraderTwoColumns{
 	InitOrder: "init_order",
 	CreatedAt: "created_at",
 	UpdatedAt: "updated_at",
+	Num:       "num",
 }
 
 // NewNewUserBindTraderTwoDao creates and returns a new DAO object for table data access.

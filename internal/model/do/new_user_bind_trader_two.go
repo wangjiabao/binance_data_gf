@@ -17,7 +17,8 @@ type NewUserBindTraderTwo struct {
 	TraderId  interface{} // 交易员id
 	Amount    interface{} //
 	Status    interface{} // 可用0，不可用1，待更换2
-	InitOrder interface{} // 绑定是否初始化仓位
+	InitOrder interface{} // 绑后是否初始化仓位
 	CreatedAt *gtime.Time // 创建时间
 	UpdatedAt *gtime.Time // 更新时间
+	Num       interface{} //
 }
