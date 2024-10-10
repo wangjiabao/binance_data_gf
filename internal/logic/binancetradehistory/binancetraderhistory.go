@@ -608,6 +608,10 @@ func (s *sBinanceTraderHistory) PullAndOrder(ctx context.Context, traderNum uint
 	return nil
 }
 
+type orderUpdateDataLockData struct {
+	lock bool
+}
+
 // PullAndOrderNew 拉取binance数据，仓位，根据cookie
 func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum uint64, ipProxyUse int) (err error) {
 	start := time.Now()
@@ -706,6 +710,12 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 	// 用于下单
 	orderInsertData := make([]*do.TraderPosition, 0)
 	orderUpdateData := make([]*do.TraderPosition, 0)
+
+	// 用于对比both的多-》空，空-》多
+	orderUpdateDataBothLockSymbol := make(map[string]bool, 0) // 需要按顺序下单的币种的标志
+	orderUpdateDataBothLock := gmap.New(true)
+	defer orderUpdateDataBothLock.Clear()
+
 	for _, vReqResData := range reqResData {
 		// 新增
 		var (
@@ -861,6 +871,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 							PositionSide:   lastPositionSide,
 							PositionAmount: float64(0),
 						})
+						orderUpdateDataBothLockSymbol[vReqResData.Symbol] = true
 					}
 
 					tmpPositionSide = "SHORT"
@@ -875,6 +886,7 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 							PositionSide:   lastPositionSide,
 							PositionAmount: float64(0),
 						})
+						orderUpdateDataBothLockSymbol[vReqResData.Symbol] = true
 					}
 
 					tmpPositionSide = "LONG"
@@ -1314,6 +1326,16 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 
 				// 剩余仓位
 				tmpQty = userOrderTwoSymbolPositionSideCount[tmpUpdateData.Symbol.(string)+tmpUpdateData.PositionSide.(string)]
+
+				// 如果是单向持仓的，换仓标志，换仓构建好的数据一定是先完全平仓
+				if _, ok := orderUpdateDataBothLockSymbol[tmpUpdateData.Symbol.(string)]; ok {
+					if orderUpdateDataBothLockSymbol[tmpUpdateData.Symbol.(string)] {
+						// 加锁，平仓请求后才能开仓的锁
+						orderUpdateDataBothLock.Set(tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10), &orderUpdateDataLockData{
+							lock: true,
+						})
+					}
+				}
 			} else if lessThanOrEqualZero(lastPositionData.PositionAmount, tmpUpdateData.PositionAmount.(float64), 1e-7) {
 				fmt.Println("新，追加仓位：", tmpUpdateData, lastPositionData)
 				// 本次加仓 代单员币的数量 * (用户保证金/代单员保证金)
@@ -1400,6 +1422,38 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 			err = s.pool.Add(ctx, func(ctx context.Context) {
 				defer wg.Done()
 
+				// 带锁的
+				if ("LONG" == positionSide && "BUY" == side) || ("SHORT" == positionSide && "SELL" == side) {
+					if orderUpdateDataBothLock.Contains(tmpUpdateData.Symbol.(string) + strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10)) {
+						// 获取锁
+						fmt.Println("both仓位，锁，开始", tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10))
+						var tmpLock *orderUpdateDataLockData
+						tmpBegin := time.Now()
+						for {
+							// 获取当前时间与开始时间的差值
+							elapsed := time.Since(tmpBegin)
+							// 如果时间超过 5 秒，则跳出循环
+							if elapsed > 5*time.Second {
+								fmt.Println("both仓位，锁，5秒时间已到，退出循环，自动解锁", tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10))
+								break
+							}
+
+							tmpLock = orderUpdateDataBothLock.Get(tmpUpdateData.Symbol.(string) + strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10)).(*orderUpdateDataLockData)
+							if nil == tmpLock { // 无锁解除
+								fmt.Println("both仓位，锁，无锁，退出循环，自动解锁", tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10))
+								break
+							}
+
+							if tmpLock.lock {
+								continue
+							}
+
+							fmt.Println("both仓位，锁，结束", tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10))
+							break
+						}
+					}
+				}
+
 				// 下单，不用计算数量，新仓位
 				// 新订单数据
 				currentOrder := &do.NewUserOrderTwo{
@@ -1427,6 +1481,16 @@ func (s *sBinanceTraderHistory) PullAndOrderNew(ctx context.Context, traderNum u
 				if nil != err {
 					fmt.Println(err)
 					return
+				}
+
+				// 带锁的解锁
+				if ("LONG" == positionSide && "SELL" == side) || ("SHORT" == positionSide && "BUY" == side) {
+					if orderUpdateDataBothLock.Contains(tmpUpdateData.Symbol.(string) + strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10)) {
+						orderUpdateDataBothLock.Set(tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10), &orderUpdateDataLockData{
+							lock: false,
+						})
+						fmt.Println("both仓位，锁，解锁了", tmpUpdateData.Symbol.(string)+strconv.FormatUint(uint64(tmpUserBindTraders.UserId), 10))
+					}
 				}
 
 				// 下单异常
